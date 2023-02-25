@@ -2,6 +2,8 @@ Require Import Coqlib Maps.
 Require Import AST Integers Values Events Memory Globalenvs Smallstep.
 Require Import Op Locations Conventions Mach.
 
+Import ListNotations.
+Open Scope list_scope. 
 (** * Mach with Bassic Block Structure *)
 
 Definition node := positive.
@@ -33,51 +35,253 @@ Definition funsig (fd: fundef) :=
 Definition genv := Genv.t fundef unit.
 (** * Operational semantics *)
 
-Inductive stackframe: Type :=
+Section SEMANTICS.
+
+Variable return_address_offset: function -> code -> ptrofs -> Prop.
+
+Variable ge: genv.
+
+Definition load_stack (m: mem) (sp: val) (ty: typ) (ofs: ptrofs) :=
+  Mem.loadv (chunk_of_type ty) m (Val.offset_ptr sp ofs).
+
+Definition store_stack (m: mem) (sp: val) (ty: typ) (ofs: ptrofs) (v: val) :=
+  Mem.storev (chunk_of_type ty) m (Val.offset_ptr sp ofs) v.
+
+Fixpoint find_label (lbl: label) (c: code) {struct c} : option code :=
+  match c with
+  | nil => None
+  | nil :: ll => None
+  | (i :: l) :: ll => if is_label lbl i then Some ((i :: l) :: ll) 
+                      else find_label lbl ll
+  end.
+
+Print is_tail.
+Lemma find_label_tail:
+  forall lbl c c', find_label lbl c = Some c' -> is_tail c' c.
+Proof. Admitted.
+
+Print incl.
+Lemma find_label_incl:
+  forall lbl c c', find_label lbl c = Some c' -> incl c' c.
+Proof. Admitted.
+
+Definition find_function_ptr
+        (ge: genv) (ros: mreg + ident) (rs: regset) : option block :=
+  match ros with
+  | inl r =>
+      match rs r with
+      | Vptr b ofs => if Ptrofs.eq ofs Ptrofs.zero then Some b else None
+      | _ => None
+      end
+  | inr symb =>
+      Genv.find_symbol ge symb
+  end.
+
+
+Inductive stackframe : Type :=
   | Stackframe:
-      forall (f: bblock)       (**r pointer to calling function *)
-             (sp: val)        (**r stack pointer in calling function *)
-             (retaddr: val)   (**r Asm return address in calling function *)
-             (c: code),       (**r program point in calling function *)
+      forall (f: block)         (**r calling function *)
+             (sp: val)          (**r stack pointer in calling function *)
+             (retaddr: val)     (**r Asm return address in calling function *)
+             (bb: bblock)       (**remaining block *)
+             (c: code),         (**remaining codes *)
       stackframe.
 
+      Definition parent_sp (s: list stackframe) : val :=
+        match s with
+        | nil => Vnullptr
+        | Stackframe f sp ra c bb :: s' => sp
+        end.
+      
+      Definition parent_ra (s: list stackframe) : val :=
+        match s with
+        | nil => Vnullptr
+        | Stackframe f sp ra c bb :: s' => ra
+        end.
+
 Inductive state: Type :=
-| State:
-    forall (stack: list stackframe) (**r call stack *)
-            (f: function)            (**r function currently executing *)
-            (sp: val)                (**r stack pointer *)
-            (pc: node)               (**r current program point *)
-            (m: mem),                (**r memory state *)
-    state
-| Block:
-    forall (stack: list stackframe) (**r call stack *)
-            (f: function)            (**r function currently executing *)
-            (sp: val)                (**r stack pointer *)
-            (bb: bblock)             (**r current basic block *)
-            (m: mem),                (**r memory state *)
-    state
-| Callstate:
-    forall (stack: list stackframe)  (**r call stack *)
-            (f: block)                (**r pointer to function to call *)
-            (rs: regset)              (**r register state *)
-            (m: mem),                 (**r memory state *)
-    state
-| Returnstate:
-    forall (stack: list stackframe)  (**r call stack *)
-            (rs: regset)              (**r register state *)
-            (m: mem),                 (**r memory state *)
-    state.
+  | State:
+      forall (stack: list stackframe)  (**r call stack *)
+             (f: block)                (**r pointer to current function *)
+             (sp: val)                 (**r stack pointer *)
+             (c: code)                 (**r current program point *)
+             (rs: regset)              (**r register state *)
+             (m: mem),                 (**r memory state *)
+      state
+  | Block:
+      forall (stack: list stackframe) (**r call stack *)
+             (f: block)            (**r function currently executing *)
+             (sp: val)                (**r stack pointer *)
+             (bb: bblock)             (**r current basic block *)
+             (c: code)                (**remaining block *)
+             (rs: regset)              (**r register state *)
+             (m: mem),                (**r memory state *)
+      state
+  | Callstate:
+      forall (stack: list stackframe)  (**r call stack *)
+             (f: block)                (**r pointer to function to call *)
+             (rs: regset)              (**r register state *)
+             (m: mem),                 (**r memory state *)
+      state
+  | Returnstate:
+      forall (stack: list stackframe)  (**r call stack *)
+             (rs: regset)              (**r register state *)
+             (m: mem),                 (**r memory state *)
+      state.
 
 Inductive step: state -> trace -> state -> Prop :=
-(* | exec_start_block: forall s f sp pc m bb,
-    (fn_code f)!pc = Some bb ->
-    step (State s f sp pc m)
-      E0 (Block s f sp bb m) *)
-.
+  | exec_start_block: forall s fb sp c rs m bb,
+      step (State s fb sp (bb::c) rs m)
+        E0 (Block s fb sp bb c rs m)
+  | exec_end_block:
+      forall s fb sp c rs m,
+      step (Block s fb sp nil c rs m)
+        E0 (State s fb sp c rs m)
+  | exec_Mgetstack:
+      forall s f sp ofs ty dst bb c rs m v,
+      load_stack m sp ty ofs = Some v ->
+      step (Block s f sp (Mgetstack ofs ty dst :: bb) c rs m)
+        E0 (Block s f sp bb c (rs#dst <- v) m)
+  | exec_Msetstack:
+      forall s f sp src ofs ty bb c rs m m' rs',
+      store_stack m sp ty ofs (rs src) = Some m' ->
+      rs' = undef_regs (destroyed_by_setstack ty) rs ->
+      step (Block s f sp (Msetstack src ofs ty :: bb) c rs m)
+        E0 (Block s f sp bb c rs' m')
+  | exec_Mgetparam:
+      forall s fb f sp ofs ty dst bb c rs m v rs',
+      Genv.find_funct_ptr ge fb = Some (Internal f) ->
+      load_stack m sp Tptr f.(fn_link_ofs) = Some (parent_sp s) ->
+      load_stack m (parent_sp s) ty ofs = Some v ->
+      rs' = (rs # temp_for_parent_frame <- Vundef # dst <- v) ->
+      step (Block s fb sp (Mgetparam ofs ty dst :: bb) c rs m)
+        E0 (Block s fb sp bb c rs' m)
+  | exec_Mop:
+      forall s f sp op args res bb c rs m v rs',
+      eval_operation ge sp op rs##args m = Some v ->
+      rs' = ((undef_regs (destroyed_by_op op) rs)#res <- v) ->
+      step (Block s f sp (Mop op args res :: bb) c rs m)
+        E0 (Block s f sp bb c rs' m)
+  | exec_Mload:
+      forall s f sp chunk addr args dst bb c rs m a v rs',
+      eval_addressing ge sp addr rs##args = Some a ->
+      Mem.loadv chunk m a = Some v ->
+      rs' = ((undef_regs (destroyed_by_load chunk addr) rs)#dst <- v) ->
+      step (Block s f sp (Mload chunk addr args dst :: bb) c rs m)
+        E0 (Block s f sp bb c rs' m)
+  | exec_Mstore:
+      forall s f sp chunk addr args src bb c rs m m' a rs',
+      eval_addressing ge sp addr rs##args = Some a ->
+      Mem.storev chunk m a (rs src) = Some m' ->
+      rs' = undef_regs (destroyed_by_store chunk addr) rs ->
+      step (Block s f sp (Mstore chunk addr args src :: bb) c rs m)
+        E0 (Block s f sp bb c rs' m')
+  | exec_Mcall:
+      forall s fb sp sig ros bb c rs m f f' ra,
+      find_function_ptr ge ros rs = Some f' ->
+      Genv.find_funct_ptr ge fb = Some (Internal f) ->
+      return_address_offset f c ra ->
+      step (Block s fb sp (Mcall sig ros :: bb) c rs m)
+        E0 (Callstate (Stackframe fb sp (Vptr fb ra) bb c :: s)
+                        f' rs m)
+  | exec_Mtailcall:
+      forall s fb stk soff sig ros bb c rs m f f' m',
+      find_function_ptr ge ros rs = Some f' ->
+      Genv.find_funct_ptr ge fb = Some (Internal f) ->
+      load_stack m (Vptr stk soff) Tptr f.(fn_link_ofs) = Some (parent_sp s) ->
+      load_stack m (Vptr stk soff) Tptr f.(fn_retaddr_ofs) = Some (parent_ra s) ->
+      Mem.free m stk 0 f.(fn_stacksize) = Some m' ->
+      step (Block s fb (Vptr stk soff) (Mtailcall sig ros :: bb) c rs m)
+        E0 (Callstate s f' rs m')
+  | exec_Mbuiltin:
+      forall s f sp bb c rs m ef args res vargs t vres rs' m',
+      eval_builtin_args ge rs sp m args vargs ->
+      external_call ef ge vargs m t vres m' ->
+      rs' = set_res res vres (undef_regs (destroyed_by_builtin ef) rs) ->
+      step (Block s f sp (Mbuiltin ef args res :: bb) c rs m)
+          t (Block s f sp bb c rs' m')
+  | exec_Mgoto:
+      forall s fb f sp lbl c rs m c' bb,
+      Genv.find_funct_ptr ge fb = Some (Internal f) ->
+      find_label lbl f.(fn_code) = Some c' ->
+      step (Block s fb sp (Mgoto lbl :: bb) c rs m)
+        E0 (State s fb sp c' rs m)
+  | exec_Mcond_true:
+      forall s fb f sp cond args lbl bb c rs m c' rs',
+      eval_condition cond rs##args m = Some true ->
+      Genv.find_funct_ptr ge fb = Some (Internal f) ->
+      find_label lbl f.(fn_code) = Some c' ->
+      rs' = undef_regs (destroyed_by_cond cond) rs ->
+      step (Block s fb sp (Mcond cond args lbl :: bb) c rs m)
+        E0 (State s fb sp c' rs' m)
+  | exec_Mcond_false:
+      forall s f sp cond args lbl bb c rs m rs',
+      eval_condition cond rs##args m = Some false ->
+      rs' = undef_regs (destroyed_by_cond cond) rs ->
+      step (Block s f sp (Mcond cond args lbl :: bb) c rs m)
+        E0 (Block s f sp bb c rs' m)
+  | exec_Mjumptable:
+      forall s fb f sp arg tbl bb c rs m n lbl c' rs',
+      rs arg = Vint n ->
+      list_nth_z tbl (Int.unsigned n) = Some lbl ->
+      Genv.find_funct_ptr ge fb = Some (Internal f) ->
+      find_label lbl f.(fn_code) = Some c' ->
+      rs' = undef_regs destroyed_by_jumptable rs ->
+      step (Block s fb sp (Mjumptable arg tbl :: bb) c rs m)
+        E0 (State s fb sp c' rs' m)
+  | exec_Mreturn:
+      forall s fb stk soff bb c rs m f m',
+      Genv.find_funct_ptr ge fb = Some (Internal f) ->
+      load_stack m (Vptr stk soff) Tptr f.(fn_link_ofs) = Some (parent_sp s) ->
+      load_stack m (Vptr stk soff) Tptr f.(fn_retaddr_ofs) = Some (parent_ra s) ->
+      Mem.free m stk 0 f.(fn_stacksize) = Some m' ->
+      step (Block s fb (Vptr stk soff) (Mreturn :: bb) c rs m)
+        E0 (Returnstate s rs m')
+  | exec_function_internal:
+      forall s fb rs m f m1 m2 m3 stk rs',
+      Genv.find_funct_ptr ge fb = Some (Internal f) ->
+      Mem.alloc m 0 f.(fn_stacksize) = (m1, stk) ->
+      let sp := Vptr stk Ptrofs.zero in
+      store_stack m1 sp Tptr f.(fn_link_ofs) (parent_sp s) = Some m2 ->
+      store_stack m2 sp Tptr f.(fn_retaddr_ofs) (parent_ra s) = Some m3 ->
+      rs' = undef_regs destroyed_at_function_entry rs ->
+      step (Callstate s fb rs m)
+        E0 (State s fb sp f.(fn_code) rs' m3)
+  | exec_function_external:
+      forall s fb rs m t rs' ef args res m',
+      Genv.find_funct_ptr ge fb = Some (External ef) ->
+      extcall_arguments rs m (parent_sp s) (ef_sig ef) args ->
+      external_call ef ge args m t res m' ->
+      rs' = set_pair (loc_result (ef_sig ef)) res (undef_caller_save_regs rs) ->
+      step (Callstate s fb rs m)
+          t (Returnstate s rs' m')
+  | exec_return:
+      forall s f sp ra c bb rs m,
+      step (Returnstate (Stackframe f sp ra bb c :: s) rs m)
+        E0 (Block s f sp bb c rs m)
+  .
+
+End SEMANTICS.
+
+Inductive initial_state (p: program): state -> Prop :=
+| initial_state_intro: forall fb m0,
+    let ge := Genv.globalenv p in
+    Genv.init_mem p = Some m0 ->
+    Genv.find_symbol ge p.(prog_main) = Some fb ->
+    initial_state p (Callstate nil fb (Regmap.init Vundef) m0).
+
+Inductive final_state: state -> int -> Prop :=
+  | final_state_intro: forall rs m r retcode,
+      loc_result signature_main = One r ->
+      rs r = Vint retcode ->
+      final_state (Returnstate nil rs m) retcode.
+
+Definition semantics (rao: function -> code -> ptrofs -> Prop) (p: program) :=
+  Semantics (step rao) (initial_state p) final_state (Genv.globalenv p).
 
 Require Import Errors.
-Import ListNotations.
 Open Scope error_monad_scope.
+Import ListNotations.
 Open Scope list_scope. 
 
 
