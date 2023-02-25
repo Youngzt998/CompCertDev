@@ -334,3 +334,51 @@ Definition transf_fundef (f: Mach.fundef) : res fundef :=
 Definition transf_program (p: Mach.program) : res program :=
     transform_partial_program transf_fundef p.
 
+
+
+
+
+Require Import Linking.
+
+(** Correctness Proof **)
+Definition match_prog (p: Mach.program) (tp: MachBlock.program) :=
+  match_program (fun _ f tf => transf_fundef f = OK tf) eq p tp.
+
+Lemma transf_program_match:
+  forall p tp, transf_program p = OK tp -> match_prog p tp.
+Proof.
+  intros. eapply match_transform_partial_program; eauto.
+Qed.
+
+
+Section PRESERVATION.
+
+Variable return_address_offset: Mach.function -> Mach.code -> ptrofs -> Prop.
+
+Variable treturn_address_offset: MachBlock.function -> MachBlock.code -> ptrofs -> Prop.
+
+(* Hypothesis return_address_offset_exists:
+  forall f sg ros c,
+  is_tail (Mcall sg ros :: c) (fn_code f) ->
+  exists ofs, return_address_offset f c ofs. *)
+
+Let step := Mach.step return_address_offset.
+
+Variable prog: Mach.program.
+Variable tprog: MachBlock.program.
+Hypothesis TRANSF: match_prog prog tprog.
+Let ge := Genv.globalenv prog.
+Let tge := Genv.globalenv tprog.
+
+
+
+
+
+Theorem transf_program_correct:
+  forward_simulation (Mach.semantics return_address_offset prog) 
+                     (MachBlock.semantics treturn_address_offset tprog).
+Proof.
+  
+Admitted.
+
+End PRESERVATION.
