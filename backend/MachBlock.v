@@ -338,7 +338,7 @@ Definition transf_program (p: Mach.program) : res program :=
 
 
 
-Require Import Linking.
+Require Import Linking Globalenvs.
 
 (** Correctness Proof **)
 Definition match_prog (p: Mach.program) (tp: MachBlock.program) :=
@@ -355,7 +355,7 @@ Section PRESERVATION.
 
 Variable return_address_offset: Mach.function -> Mach.code -> ptrofs -> Prop.
 
-Variable treturn_address_offset: MachBlock.function -> MachBlock.code -> ptrofs -> Prop.
+Variable t_return_address_offset: MachBlock.function -> MachBlock.code -> ptrofs -> Prop.
 
 (* Hypothesis return_address_offset_exists:
   forall f sg ros c,
@@ -371,14 +371,108 @@ Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
 
 
+Inductive match_stackframe: Mach.stackframe -> MachBlock.stackframe -> Prop :=
+| match_stackframes_intro: forall f f' sp sp' ra ra' c bb' c'
+    (FUNC: f = f') (SP: sp = sp') 
+    (CODE: transf_code c = bb'::c'),
+    match_stackframe (Mach.Stackframe f sp ra c)
+                     (Stackframe f' sp' ra' bb' c')
+.
 
+(* Inductive match_stacks: list Mach.stackframe -> list MachBlock.stackframe -> Prop :=
+| match_stacks_nil: match_stacks nil nil
+| match_stacks_cons: forall 
+
+. *)
+
+(** a very trvial and straight matching relation *)
+Inductive match_states: Mach.state -> MachBlock.state -> Prop :=
+| match_blocks:
+    forall sl sl' f f' sp sp' c bb' c' rs rs' m m'
+    (STACKS: Forall2 match_stackframe sl sl')
+    (FUNC: f = f') (SP: sp = sp') 
+    (CODE: bb' :: c' = transf_code c)
+    (RS: rs = rs') (MEM: m = m'),
+    match_states (Mach.State sl f sp c rs m)
+                 (MachBlock.Block sl' f' sp' bb' c' rs' m')
+| match_regular_states:
+    forall sl sl' f f' sp sp' c c' rs rs' m m'
+    (STACKS: Forall2 match_stackframe sl sl')
+    (FUNC: f = f') (SP: sp = sp') 
+    (CODE: c' = transf_code c)
+    (RS: rs = rs') (MEM: m = m'),
+    match_states (Mach.State sl f sp c rs m)
+                 (MachBlock.State sl' f' sp' c' rs' m')
+| match_call:
+    forall sl sl' f f' rs rs' m m'
+      (STACKS: Forall2 match_stackframe sl sl')
+      (FUNC: f = f') (RS: rs = rs') (MEM: m = m'),
+      match_states (Mach.Callstate sl f rs m)
+                   (Callstate sl' f' rs' m')
+| match_return:
+    forall sl sl' rs rs' m m'
+    (STACKS: Forall2 match_stackframe sl sl')
+    (RS: rs = rs') (MEM: m = m'),
+    match_states (Mach.Returnstate sl rs m)
+                 (Returnstate sl' rs' m')
+.
+
+Lemma symbols_preserved:
+  forall (s: ident), Genv.find_symbol tge s = Genv.find_symbol ge s.
+Proof (Genv.find_symbol_match TRANSF).
+
+Lemma senv_preserved:
+  Senv.equiv ge tge.
+Proof (Genv.senv_match TRANSF).
+
+Theorem transf_step_correct:
+let stepM := Mach.step return_address_offset in
+let stepMB:= MachBlock.step t_return_address_offset in
+  forall s1 t s2, Mach.step return_address_offset ge s1 t s2 ->
+  forall s1' (MS: match_states s1 s1'),
+  exists s2', plus stepMB tge s1' t s2' /\ match_states s2 s2'.
+Proof. 
+  intros.
+  inv H.
+  - inv MS. admit.
+
+Admitted.
+
+
+Lemma transf_initial_states:
+  forall st1, Mach.initial_state prog st1 ->
+  exists st2, MachBlock.initial_state tprog st2 /\ match_states st1 st2.
+Proof. 
+  intros. inv H.
+  exists (Callstate [] fb (Regmap.init Vundef) m0).
+  split.
+  - apply initial_state_intro.
+    apply (Genv.init_mem_transf_partial TRANSF); trivial. 
+    rewrite (match_program_main TRANSF).
+    rewrite symbols_preserved; auto. 
+  - apply match_call; auto.
+Qed.
+
+Lemma transf_final_states:
+  forall st1 st2 r,
+  match_states st1 st2 -> Mach.final_state st1 r -> MachBlock.final_state st2 r.
+Proof. 
+  intros. inv H0. inv H. inv STACKS.
+  eapply final_state_intro.
+  eapply H1. trivial.
+Qed.
 
 
 Theorem transf_program_correct:
   forward_simulation (Mach.semantics return_address_offset prog) 
-                     (MachBlock.semantics treturn_address_offset tprog).
+                     (MachBlock.semantics t_return_address_offset tprog).
 Proof.
-  
-Admitted.
+  eapply forward_simulation_plus with (match_states := match_states).
+  - apply senv_preserved.
+  - exact transf_initial_states.
+  - exact transf_final_states.
+  - exact transf_step_correct.
+Qed.
+
 
 End PRESERVATION.
