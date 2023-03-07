@@ -99,9 +99,8 @@ Fixpoint try_swap_nth_code (n: nat) (l: list instruction): list instruction:=
   match n, l with
   | _, nil => nil
   | _, i :: nil => i :: nil
-  | O, i1 :: i2 :: l' => if data_depends i1 i2 
-                         then i2 :: i1 :: l'
-                         else l
+  | O, i1 :: i2 :: l' => if data_depends i1 i2 then l
+                         else i2 :: i1 :: l'
   | Datatypes.S n', i :: l' => try_swap_nth_code n' l'
   end.  
 
@@ -115,6 +114,23 @@ Fixpoint try_swap_n_times (ln: list nat)(f: function) :=
   | nil => f
   | n :: ln' => try_swap_n_times ln' (try_swap_nth_func n f)
   end.
+
+Require Import Errors.
+Open Scope error_monad_scope.
+Import ListNotations.
+Open Scope list_scope. 
+
+Definition transf_function_try_swap_nth (n: nat) (f: function) : res function :=
+    OK (try_swap_nth_func n f).
+
+Definition transf_fundef_try_swap_nth (n: nat) (f: fundef) : res fundef :=
+    AST.transf_partial_fundef (transf_function_try_swap_nth n) f.
+Check transform_partial_program.
+
+Definition transf_program_try_swap_nth_in_one (n: nat) (funid: ident) (p: Mach.program): res program :=
+    transform_partial_program2 
+      (fun i f => if ident_eq i funid then transf_fundef_try_swap_nth n f else OK f) 
+      (fun i v => OK v) p.
 
 Inductive match_stackframes: stackframe -> stackframe -> Prop :=
   | match_stackframes_swapped_code:
@@ -151,10 +167,13 @@ Inductive match_states: state -> state -> Prop :=
       (MEM: m = m'),
       match_states (Returnstate sl rs m)
                    (Returnstate sl' rs' m')
-
 .
 
 
+(** Correctness proof of general correctness of instruction scheduling algorithm*)
+
+
+(** Step 1: prove the correctness of simpl swap *)
 Section TWO_STEP_CORRECTNESS.
 
 Variable prog: program.
@@ -169,16 +188,15 @@ Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
 
 Lemma independ_two_step_match:
-    forall stk1 f sp bb ls m1
+    forall stk1 stk1' f sp bb rs1 m1
     s1 s3 s1' s3' i1 i2 t t'
-    (* (TRANSF: transf_function f = OK f') *)
-    (INDEP: data_depends i2 i1 = false)
-    (S1: s1 = State stk1 f sp (i1::i2::bb) ls m1)
+    (INDEP: data_depends i1 i2 = false)
+    (S1: s1 = State stk1 f sp (i1::i2::bb) rs1 m1)
     (STEP13: starN step ge 2 s1 t s3)
-    (S1': s1' = State stk1 f sp (i2::i1::bb) ls m1)
-    (MATCH: match_states s1 s1')
+    (S1': s1' = State stk1' f sp (i2::i1::bb) rs1 m1)
+    (MATCH: match_stack stk1 stk1')
     (STEP13': starN step ge 2 s1' t' s3'),
-        t = t' .
+        match_states s3 s3' .
 Proof.
     intros.
     inv STEP13. rename s' into s2. inv H1. inv H3. rename t0 into t2.
@@ -229,6 +247,11 @@ Admitted.
 End TWO_STEP_CORRECTNESS.
 
 
+Section SWAP_CORRECT_TO_SCHEDULING_CORRECT.
+
+
+
+
 Require Import Errors.
 Open Scope error_monad_scope.
 Import ListNotations.
@@ -264,6 +287,7 @@ Admitted.
 
 
 
+
 (* Definition transf_code:= list2bbs.
 
 Definition transf_function (f: Mach.function) : res function :=
@@ -282,14 +306,8 @@ Definition transf_program (p: Mach.program) : res program :=
 
 
 
-(** Correctness proof of general correctness of instruction scheduling algorithm*)
-
-
-(** Step 1: prove the correctness of simpl swap *)
-Module SWAP_CORRECTNESS.
 
 
 
 
-End SWAP_CORRECTNESS.
 
