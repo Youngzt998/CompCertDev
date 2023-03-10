@@ -207,41 +207,111 @@ Fixpoint transf_program_try_swap_multi_in_multi (pairs:list (ident * list nat))(
     transf_program_try_swap_multi_in_multi pairs' p  
   end.
 
-(* Section SIMULATION_FRAMEWORK.
+Section SMALL_STEP_EXT.
+  Variable L1: Smallstep.semantics.
+
+  Theorem forward_simulation_refl: forward_simulation L1 L1.
+  Proof.
+    eapply forward_simulation_step with (match_states := eq).
+    auto. intros; eauto. intros; subst; auto.
+    intros; subst; eauto.
+  Qed. 
+
+End SMALL_STEP_EXT.
+
+Inductive match_fundef (p: program): fundef -> fundef -> Prop :=
+  | match_fundef_same: forall f tf, match_fundef p f tf  
+  | match_fundef_swap_nth: forall n f,
+      match_fundef p (Internal f) (Internal (try_swap_nth_func n f))
+.
+Definition match_varinfo_eq: unit -> unit -> Prop := eq.
+
+Section SIMULATION_FRAMEWORK.
+
+  Variable return_address_offset: function -> code -> ptrofs -> Prop.
+  Variable funid: ident.
   
-  Variable real_transf_fundef: fundef -> res fundef.
-  Variable real_transf_program: program -> res program.
-  Hypothesis real_transf_fundef_equiv: True.
+  Definition transf_single_fun_fsim_preserve (transf_def: fundef -> fundef):=
+    forall prog tprog, 
+    (* let transf_fun := (fun i f => if ident_eq i funid then transf_def f else OK f) in
+    let transf_var := (fun (i: ident) (v:unit) => OK v) in *)
+    transform_partial_program2 
+      (fun i f => if ident_eq i funid then OK (transf_def f) else OK f) 
+      (fun i v => OK v) prog = OK tprog ->
+    forward_simulation (Mach.semantics return_address_offset prog) 
+    (Mach.semantics return_address_offset tprog).
 
-  Definition real_match_prog (prog tprog: program) :=
-    match_program (fun ctx f tf => real_transf_fundef f = OK tf) eq prog tprog.
+  (* a sequence of correct transformation *)
+  Inductive transf_fundef_list_preserved: list (fundef -> fundef) -> Prop :=
+    | transf_fundef_list_preserved_nil: 
+        transf_fundef_list_preserved nil
+    | transf_fundef_list_preserved_cons:
+      forall transf_def lfundef,
+        transf_single_fun_fsim_preserve transf_def ->
+        transf_fundef_list_preserved lfundef ->
+        transf_fundef_list_preserved (transf_def :: lfundef)
+  .
+  Print fold_left.
+  Fixpoint transf_fundef_fold (tfl: list (fundef -> fundef)) (fd: fundef): fundef := 
+    match tfl with
+    | nil => fd
+    | transf_fundef :: tfl' => 
+        transf_fundef_fold tfl' (transf_fundef fd)
+    end.
 
-  Section SIMULATION_TRANS.
-    Variable return_address_offset: function -> code -> ptrofs -> Prop.
-    Variable prog: program.
-    Variable tprog: program.
-    Hypothesis TRANSF: real_transf_program prog = OK tprog.
-    Lemma REAL_MATCH_PROG: real_match_prog prog tprog.
-    Proof. unfold real_match_prog, match_program. Admitted.
-    Let ge := Genv.globalenv prog.
-    Let tge := Genv.globalenv tprog.
+  Variable tfl: list (fundef -> fundef).
+  Hypothesis safe_list: transf_fundef_list_preserved tfl.
+  
+  Let transf_fun := (fun i f => if ident_eq i funid then transf_fundef_fold tfl f else f).
+  Let transf_var := (fun (i: ident) (v:unit) => OK v).
 
-    Variable pairs: list (ident * list nat).
-    Hypothesis real_trasf_equiv: True.
-   
-    Theorem forward_simulation_transformed:
-      forward_simulation (Mach.semantics return_address_offset prog) 
-                         (Mach.semantics return_address_offset tprog).
-    Proof. unfold real_match_prog, match_program, match_program_gen in TRANSF. Admitted.
+  Let transf_fundef_program := 
+    transform_partial_program2 (fun i f => OK (transf_fun i f)) transf_var.
 
-  End SIMULATION_TRANS.
+  Variable prog: program.
+  Variable tprog: program.
+  Hypothesis TRANSF_PROG: transf_fundef_program prog = OK tprog.
+  
+  Theorem forward_simulation_transformed:
+    forward_simulation (Mach.semantics return_address_offset prog) 
+                       (Mach.semantics return_address_offset tprog).
+  Proof.
+    revert safe_list prog tprog TRANSF_PROG.
+    induction tfl; intros.
+    - unfold transf_fundef_program.
+      assert(prog = tprog).
+      2: { subst; apply forward_simulation_refl. }
+      simpl in *. 
+      assert (forall i f, transf_fun i f = f). 
+        intros; unfold transf_fun; destruct ident_eq; auto. 
+      assert (forall i v, transf_var i v = OK v). auto.      
+      unfold transf_fundef_program in *. 
+      monadInv TRANSF_PROG. 
+      assert (forall l, transf_globdefs (fun i f => OK (transf_fun i f)) transf_var l = OK l).
+      {
+        induction l; simpl; auto. destruct a as [a_id a_def]. 
+        destruct a_def; simpl; auto.
+        rewrite H; rewrite IHl; auto.
+        rewrite IHl; auto. simpl. destruct v; auto.
+      }
+      rewrite H1 in EQ. monadInv EQ; destruct prog; auto. 
+    - inv safe_list. specialize (IHl H2). rename a into a_trans.
+      set (res_fst' :=  transform_partial_program2 
+        (fun i f => if ident_eq i funid then OK (a_trans f) else OK f) 
+        (fun i v => OK v) prog).
+      assert( exists prog', res_fst' = OK prog' ).
+      {
+        admit.
+      } destruct H as [prog'].
+      eapply compose_forward_simulations with (L2:= semantics return_address_offset prog').
+      + apply H1; auto.
+      + apply IHl. 
+  Admitted.
 
-  (* Hypothesis real_transf_equiv:
-    forall p, exists pairs, 
-      real_transf p = transf_program_try_swap_multi_in_multi pairs p.
-   *)
-  Variable (pairs:list (ident * list nat)).
-End SIMULATION_FRAMEWORK. *)
+  (* Definition real_match_prog (prog tprog: program) :=
+    match_program (fun ctx f tf => real_transf_fundef f = OK tf) eq prog tprog. *)
+
+End SIMULATION_FRAMEWORK.
 
 Inductive match_stackframe: stackframe -> stackframe -> Prop :=
   | match_stackframes_intro:
@@ -289,8 +359,10 @@ Qed.
 
 (** Step 1: prove the correctness of one single swap *)
 
-Definition match_prog (funid: ident) (n: nat) (p tp: program) :=
-  match_program (fun _ f tf => transf_fundef_try_swap_nth n f = OK tf) eq p tp.
+(* Definition match_prog (funid: ident) (n: nat) (p tp: program) :=
+  match_program (fun _ f tf => transf_fundef_try_swap_nth n f = OK tf) eq p tp. *)
+
+
 
 Section SINGLE_SWAP_CORRECTNESS.
 
@@ -311,14 +383,9 @@ Section SINGLE_SWAP_CORRECTNESS.
   Let transf_fun := (fun i f => if ident_eq i funid then transf_fundef_try_swap_nth n f else OK f).
   Let transf_var := (fun (i: ident) (v:unit) => OK v).
 
-  Inductive match_fundef (p: program): fundef -> fundef -> Prop :=
-    | match_fundef_same: forall f tf, match_fundef p f tf  
-    | match_fundef_swap_nth: forall n f,
-        match_fundef p (Internal f) (Internal (try_swap_nth_func n f))
-  .
-  Definition match_varinfo: unit -> unit -> Prop := eq.
   
-  Lemma TRANSF: match_program_gen match_fundef match_varinfo prog prog tprog.
+  
+  Lemma TRANSF: match_program_gen match_fundef match_varinfo_eq prog prog tprog.
   Proof. 
     eapply match_transform_partial_program2. eapply TRANSF_PROG.
     2: { intros. simpl in H. inv H; apply eq_refl. }
@@ -411,10 +478,27 @@ Section SINGLE_SWAP_CORRECTNESS.
 
 End SINGLE_SWAP_CORRECTNESS.
 
-Section SWAP_CORRECT_TO_SCHEDULING_CORRECT.
 
+Section SIMGLE_FUNC_MULTI_SWAP.
 
+  Variable prog: program.
+  Variable tprog: program.
+  Variable return_address_offset: function -> code -> ptrofs -> Prop.
+  
+  (* only try to swap at one pair inside one function *)
+  Variable funid: ident.
+  Variable ln: list nat.
+  (* Hypothesis TRANSF: match_prog prog tprog. *)
+  Hypothesis TRANSF_PROG: transf_program_try_swap_nth_in_one funid n prog = OK tprog.
+  Let step := step return_address_offset.
 
+  Let ge := Genv.globalenv prog.
+  Let tge := Genv.globalenv tprog.
+
+  Let transf_fun := (fun i f => if ident_eq i funid then transf_fundef_try_swap_nth n f else OK f).
+  Let transf_var := (fun (i: ident) (v:unit) => OK v).
+
+End SIMGLE_FUNC_MULTI_SWAP.
 
 Require Import Errors.
 Open Scope error_monad_scope.
