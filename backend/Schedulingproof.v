@@ -219,6 +219,23 @@ Section SMALL_STEP_EXT.
 
 End SMALL_STEP_EXT.
 
+(** Extension from Globleenvs.v *)
+Section GENV_EXT.
+    Section TRANSF_PROGRAM_EXT.
+
+    Context {A B V W: Type}.
+    Variable transf_fun: ident -> A -> B.
+    Variable transf_var: ident -> V -> res W.
+
+    Definition transf_globdef (idg: ident * globdef A V) : ident * globdef B V :=
+        match idg with
+        | (id, Gfun f) => (id, Gfun (transf_fun id f))
+        | (id, Gvar v) => (id, Gvar v)
+        end.
+
+    End TRANSF_PROGRAM_EXT.
+End GENV_EXT.
+
 Inductive match_fundef (p: program): fundef -> fundef -> Prop :=
   | match_fundef_same: forall f tf, match_fundef p f tf  
   | match_fundef_swap_nth: forall n f,
@@ -229,20 +246,25 @@ Definition match_varinfo_eq: unit -> unit -> Prop := eq.
 Section SIMULATION_FRAMEWORK.
 
   Variable return_address_offset: function -> code -> ptrofs -> Prop.
-  Variable funid: ident.
+  (* Variable funid: ident. *)
   
-  Definition transf_single_fun_fsim_preserve (transf_def: fundef -> fundef):=
+  Definition transf_program_one (transf_def: ident -> fundef -> fundef) :=
+    transform_partial_program2 
+      (fun i f => OK (transf_def i f)) 
+      (fun i (v:unit) => OK v).
+
+  Definition transf_single_fun_fsim_preserve (transf_def: ident -> fundef -> fundef):=
     forall prog tprog, 
     (* let transf_fun := (fun i f => if ident_eq i funid then transf_def f else OK f) in
     let transf_var := (fun (i: ident) (v:unit) => OK v) in *)
     transform_partial_program2 
-      (fun i f => if ident_eq i funid then OK (transf_def f) else OK f) 
+      (fun i f => OK (transf_def i f)) 
       (fun i v => OK v) prog = OK tprog ->
     forward_simulation (Mach.semantics return_address_offset prog) 
     (Mach.semantics return_address_offset tprog).
 
   (* a sequence of correct transformation *)
-  Inductive transf_fundef_list_preserved: list (fundef -> fundef) -> Prop :=
+  Inductive transf_fundef_list_preserved: list (ident -> fundef -> fundef) -> Prop :=
     | transf_fundef_list_preserved_nil: 
         transf_fundef_list_preserved nil
     | transf_fundef_list_preserved_cons:
@@ -251,62 +273,41 @@ Section SIMULATION_FRAMEWORK.
         transf_fundef_list_preserved lfundef ->
         transf_fundef_list_preserved (transf_def :: lfundef)
   .
-  Print fold_left.
-  Fixpoint transf_fundef_fold (tfl: list (fundef -> fundef)) (fd: fundef): fundef := 
+
+  Fixpoint transf_program (tfl: list (ident -> fundef -> fundef)) (p: program) := 
     match tfl with
-    | nil => fd
+    | nil => OK p
     | transf_fundef :: tfl' => 
-        transf_fundef_fold tfl' (transf_fundef fd)
+        do p' <- transf_program_one transf_fundef p;
+        transf_program tfl' p'
     end.
 
-  Variable tfl: list (fundef -> fundef).
+  Variable tfl: list (ident -> fundef -> fundef).
   Hypothesis safe_list: transf_fundef_list_preserved tfl.
-  
-  Let transf_fun := (fun i f => if ident_eq i funid then transf_fundef_fold tfl f else f).
-  Let transf_var := (fun (i: ident) (v:unit) => OK v).
 
-  Let transf_fundef_program := 
-    transform_partial_program2 (fun i f => OK (transf_fun i f)) transf_var.
+  (* Let transf_fun := (fun i f => if ident_eq i funid then transf_fundef_fold tfl f else f).
+  Let transf_fun_res := (fun i f => if ident_eq i funid then OK (transf_fundef_fold tfl f) else OK f).
+  Let transf_var_res := (fun (i: ident) (v:unit) => OK v). *)
+
+  (* Let transf_fundef_program := 
+    transform_partial_program2 transf_fun_res transf_var_res. *)
 
   Variable prog: program.
   Variable tprog: program.
-  Hypothesis TRANSF_PROG: transf_fundef_program prog = OK tprog.
+  Hypothesis TRANSF_PROG: transf_program tfl prog = OK tprog.
   
   Theorem forward_simulation_transformed:
     forward_simulation (Mach.semantics return_address_offset prog) 
                        (Mach.semantics return_address_offset tprog).
   Proof.
-    revert safe_list prog tprog TRANSF_PROG.
-    induction tfl; intros.
-    - unfold transf_fundef_program.
-      assert(prog = tprog).
-      2: { subst; apply forward_simulation_refl. }
-      simpl in *. 
-      assert (forall i f, transf_fun i f = f). 
-        intros; unfold transf_fun; destruct ident_eq; auto. 
-      assert (forall i v, transf_var i v = OK v). auto.      
-      unfold transf_fundef_program in *. 
-      monadInv TRANSF_PROG. 
-      assert (forall l, transf_globdefs (fun i f => OK (transf_fun i f)) transf_var l = OK l).
-      {
-        induction l; simpl; auto. destruct a as [a_id a_def]. 
-        destruct a_def; simpl; auto.
-        rewrite H; rewrite IHl; auto.
-        rewrite IHl; auto. simpl. destruct v; auto.
-      }
-      rewrite H1 in EQ. monadInv EQ; destruct prog; auto. 
-    - inv safe_list. specialize (IHl H2). rename a into a_trans.
-      set (res_fst' :=  transform_partial_program2 
-        (fun i f => if ident_eq i funid then OK (a_trans f) else OK f) 
-        (fun i v => OK v) prog).
-      assert( exists prog', res_fst' = OK prog' ).
-      {
-        admit.
-      } destruct H as [prog'].
-      eapply compose_forward_simulations with (L2:= semantics return_address_offset prog').
-      + apply H1; auto.
-      + apply IHl. 
-  Admitted.
+    revert prog tprog TRANSF_PROG.
+    induction safe_list; intros.
+    - inv TRANSF_PROG. apply forward_simulation_refl.
+    - inv safe_list. specialize (IHt H3).
+      simpl in TRANSF_PROG. monadInv TRANSF_PROG. rename x into tmprog.
+      eapply compose_forward_simulations 
+        with (L2:= semantics return_address_offset tmprog); auto.
+  Qed.
 
   (* Definition real_match_prog (prog tprog: program) :=
     match_program (fun ctx f tf => real_transf_fundef f = OK tf) eq prog tprog. *)
@@ -570,21 +571,7 @@ Definition transf_program (p: Mach.program) : res program :=
     Qed. *)
     End GENV_2_6.
     
-    (** Extension from Globleenvs.v *)
-    Section GENV_EXT.
-        Section TRANSF_PROGRAM_EXT.
-    
-        Context {A B V: Type}.
-        Variable transf_fun: ident -> A -> B.
-    
-        Definition transf_globdef (idg: ident * globdef A V) : ident * globdef B V :=
-            match idg with
-            | (id, Gfun f) => (id, Gfun (transf_fun id f))
-            | (id, Gvar v) => (id, Gvar v)
-            end.
-    
-        End TRANSF_PROGRAM_EXT.
-    End GENV_EXT.
+
 
 
 
