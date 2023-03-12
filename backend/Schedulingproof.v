@@ -7,6 +7,130 @@ Require Import Mach.
 Import ListNotations.
 Open Scope list_scope. 
 
+(** TODO: move to TopoSort files *)
+Require Import RelationClasses.
+Section SWAP_ONE_PAIR.
+  Open Scope nat_scope.
+  Context {A: Type}.
+  Variable (rel: A -> A -> bool).
+
+  Fixpoint try_swap (n: nat) (l: list A): list A :=
+    match n, l with
+    | _, nil => nil | _, i :: nil => l        (* None: did not swap *)
+    | O, i1 :: i2 :: l' => if rel i1 i2 then l
+                            else (i2 :: i1 :: l')
+    | Datatypes.S n', i :: l' => try_swap n' l'
+    end. 
+
+    Lemma try_swap_rm_head: 
+      forall (n:nat) l a, 0 < n -> try_swap n (a :: l) = a :: try_swap (n-1) l.
+    Proof. Admitted.
+  
+    Lemma try_swap_at_tail: forall l, try_swap (length l) l = l.
+    Proof.
+      assert(try_swap_at_tail_aux: forall l a, 
+        try_swap (length (a::l)) (a::l) = a :: try_swap (length l) l ).
+      { intros l. induction l; intros. simpl; auto. rewrite  IHl. 
+        admit. (* TODO not a problem; need to reason about length *) 
+      }
+      induction l. simpl; auto.
+      rewrite try_swap_at_tail_aux. rewrite IHl; auto.
+    Admitted.
+
+    Section DECIDE_REL.
+      Variable (Rel: A -> A -> Prop).
+      Hypothesis decide_rel: forall a1 a2, Rel a1 a2 <-> rel a1 a2 = true.
+      
+      (* Hypothesis porder: PartialOrder (@eq A) Rel. *)
+    End DECIDE_REL.
+End SWAP_ONE_PAIR.
+
+Section SMALL_STEP_EXT.
+  Variable L1: Smallstep.semantics.
+
+  Theorem forward_simulation_refl: forward_simulation L1 L1.
+  Proof.
+    eapply forward_simulation_step with (match_states := eq).
+    auto. intros; eauto. intros; subst; auto.
+    intros; subst; eauto.
+  Qed. 
+
+End SMALL_STEP_EXT.
+
+
+Require Import Errors.
+Open Scope error_monad_scope.
+Import ListNotations.
+Open Scope list_scope. 
+Section SIMULATION_SEQUENCE.
+  Definition transf_program_one (transf_def: ident -> fundef -> fundef) :=
+      transform_partial_program2 
+        (fun i f => OK (transf_def i f)) 
+        (fun i (v:unit) => OK v).
+
+  Fixpoint transf_program_sequence (tfl: list (ident -> fundef -> fundef)) (p: program) := 
+    match tfl with
+    | nil => OK p
+    | transf_fundef :: tfl' => 
+        do p' <- transf_program_one transf_fundef p;
+        transf_program_sequence tfl' p'
+    end.
+
+  Variable return_address_offset: function -> code -> ptrofs -> Prop.
+  (* Variable funid: ident. *)
+  
+  Definition transf_single_fun_fsim_preserve (transf_def: ident -> fundef -> fundef):=
+    forall prog tprog, 
+    (* let transf_fun := (fun i f => if ident_eq i funid then transf_def f else OK f) in
+    let transf_var := (fun (i: ident) (v:unit) => OK v) in *)
+    transform_partial_program2 
+      (fun i f => OK (transf_def i f)) 
+      (fun i v => OK v) prog = OK tprog ->
+    forward_simulation (Mach.semantics return_address_offset prog) 
+    (Mach.semantics return_address_offset tprog).
+
+  (* a sequence of correct transformation *)
+  Inductive transf_fundef_list_preserved: list (ident -> fundef -> fundef) -> Prop :=
+    | transf_fundef_list_preserved_nil: 
+        transf_fundef_list_preserved nil
+    | transf_fundef_list_preserved_cons:
+      forall transf_def lfundef,
+        transf_single_fun_fsim_preserve transf_def ->
+        transf_fundef_list_preserved lfundef ->
+        transf_fundef_list_preserved (transf_def :: lfundef)
+  .
+
+  Variable prog: program.
+  Variable tprog: program.
+  Variable tfl: list (ident -> fundef -> fundef).
+  Hypothesis safe_list: transf_fundef_list_preserved tfl.
+  Hypothesis TRANSF_PROG: transf_program_sequence tfl prog = OK tprog.
+  
+  Theorem forward_simulation_sequence:
+    forward_simulation (Mach.semantics return_address_offset prog) 
+                       (Mach.semantics return_address_offset tprog).
+  Proof.
+    revert prog tprog TRANSF_PROG.
+    induction safe_list; intros.
+    - inv TRANSF_PROG. apply forward_simulation_refl.
+    - inv safe_list. specialize (IHt H3).
+      simpl in TRANSF_PROG. monadInv TRANSF_PROG. rename x into tmprog.
+      eapply compose_forward_simulations 
+        with (L2:= semantics return_address_offset tmprog); auto.
+  Qed.
+
+  (* Definition real_match_prog (prog tprog: program) :=
+    match_program (fun ctx f tf => real_transf_fundef f = OK tf) eq prog tprog. *)
+
+End SIMULATION_SEQUENCE.
+
+Check forward_simulation_sequence.
+
+Section SIMULATION_FRAMEWORK.
+  
+End SIMULATION_FRAMEWORK.
+
+
 
 (** [i1: reg = ...] :: [i2: ... = op args] :: [...] *)
 Fixpoint mregs_in_list (args: list mreg) (reg: mreg):=
@@ -46,13 +170,18 @@ Definition get_srcs (i: instruction): list mreg :=
     | _ => nil
     end. 
 
-(* register i2 write r, i1 read [..., r, ...]  *)
-Definition happens_before_rw (i1 i2: instruction):=
-    match get_srcs i1, get_dst i2 with 
-    | srcs, Some dst => mregs_in_list srcs dst
+(* RAW/True-dependence: i1 write register r, then i2 read from [..., r, ...]  *)
+Definition happens_before_wr (i1 i2: instruction):=
+    match get_dst i1, get_srcs i2 with 
+    | Some dst, srcs  => mregs_in_list srcs dst
     | _, _ => false
     end.
 
+(* WAR/Anti-dependence: i1 read from [..., r, ...], then i2 write register r,  *)
+Definition happens_before_rw (i1 i2: instruction) :=
+  happens_before_wr i2 i1.
+
+(* WAW/Output-dependence: i1 write register r, then i2 write register r*)
 Definition happens_before_ww (i1 i2: instruction) :=
     match get_dst i1, get_dst i2 with 
     | Some dst1, Some dst2 => 
@@ -60,6 +189,8 @@ Definition happens_before_ww (i1 i2: instruction) :=
     | _, _ => false
     end.
 
+(* Mem dependence: one of i1 and i2 write to memory *)
+(* always a dependence since no alias analysis performed *)
 Definition happens_before_mem (i1 i2: instruction):=
     match mem_write i1, mem_write i2 with
     | Some true, Some _ | Some _, Some true => true 
@@ -83,6 +214,7 @@ Definition happens_before (i1 i2: instruction): bool :=
 
 Notation "i1 D~> i2":= (happens_before i1 i2) (at level 1).
 
+
 Lemma happens_before_inv_false: 
     forall i1 i2, happens_before i1 i2 = false ->
         True.
@@ -96,89 +228,13 @@ Fixpoint topo_calcu (bb: list instruction): GraphType. Admitted.
 (** swap some pair of consecutive inst. in code *)
 (* note that those are not actual functions that will be used in compiling, but only in correctness proof *)
 
-(* Fixpoint try_swap_nth_code_aux (n: nat) (l: list instruction): option (list instruction):=
-  match n, l with
-  | _, nil => None | _, i :: nil => None        (* None: did not swap *)
-  | O, i1 :: i2 :: l' => if happens_before i1 i2 then None
-                         else Some (i2 :: i1 :: l')
-  | Datatypes.S n', i :: l' => try_swap_nth_code_aux n' l'
-  end.   *)
-Require Import RelationClasses.
-Section SWAP_ONE_PAIR.
-  Open Scope nat_scope.
-  Context {A: Type}.
-  Variable (rel: A -> A -> bool).
-
-  Fixpoint try_swap (n: nat) (l: list A): list A :=
-    match n, l with
-    | _, nil => nil | _, i :: nil => l        (* None: did not swap *)
-    | O, i1 :: i2 :: l' => if rel i1 i2 then l
-                            else (i2 :: i1 :: l')
-    | Datatypes.S n', i :: l' => try_swap n' l'
-    end. 
-
-    Lemma try_swap_rm_head: 
-      forall (n:nat) l a, 0 < n -> try_swap n (a :: l) = a :: try_swap (n-1) l.
-    Proof. Admitted.
-  
-    Lemma try_swap_at_tail: forall l, try_swap (length l) l = l.
-    Proof.
-      assert(try_swap_at_tail_aux: forall l a, 
-        try_swap (length (a::l)) (a::l) = a :: try_swap (length l) l ).
-      { intros l. induction l; intros. simpl; auto. rewrite  IHl. 
-        admit. (* TODO not a problem; need to reason about length *) 
-      }
-      induction l. simpl; auto.
-      rewrite try_swap_at_tail_aux. rewrite IHl; auto.
-    Admitted.
-
-    Section DECIDE_REL.
-      Variable (Rel: A -> A -> Prop).
-      Hypothesis decide_rel: forall a1 a2, Rel a1 a2 <-> rel a1 a2 = true.
-      
-      (* Hypothesis porder: PartialOrder (@eq A) Rel. *)
-    End DECIDE_REL.
-End SWAP_ONE_PAIR.
-
-
 Definition try_swap_code:= try_swap happens_before.
-  (* match n, l with
-  | _, nil => nil | _, i :: nil => l        (* None: did not swap *)
-  | O, i1 :: i2 :: l' => if happens_before i1 i2 then l
-                          else (i2 :: i1 :: l')
-  | Datatypes.S n', i :: l' => try_swap_code n' l'
-  end.   *)
 
 Definition try_swap_nth_func (n: nat)(f: function):= 
     mkfunction f.(fn_sig) (try_swap_code n f.(fn_code)) 
                f.(fn_stacksize) f.(fn_link_ofs) f.(fn_retaddr_ofs).
 
-(* Fixpoint try_swap_multi_code_aux (ln: list nat) (l: list instruction): option (list instruction) :=
-match ln with
-| nil => None 
-| n :: ln' => match try_swap_nth_code_aux n l with
-                | Some l' => try_swap_multi_code_aux ln' l'
-                | None => None
-                end
-end.
 
-Definition try_swap_multi_code (ln: list nat) (l: list instruction): list instruction :=
-match try_swap_multi_code_aux ln l with
-| Some l' => l'
-| None => l 
-end. *)
-
-(** a consecutive swap *)
-(* Fixpoint try_swap_multi_func (ln: list nat)(f: function) :=
-  match ln with
-  | nil => f
-  | n :: ln' => try_swap_multi_func ln' (try_swap_nth_func n f)
-  end. *)
-
-Require Import Errors.
-Open Scope error_monad_scope.
-Import ListNotations.
-Open Scope list_scope. 
 
 Definition transf_function_try_swap_nth (n: nat) (f: function) : res function :=
     OK (try_swap_nth_func n f).
@@ -207,20 +263,8 @@ Fixpoint transf_program_try_swap_multi_in_multi (pairs:list (ident * list nat))(
     transf_program_try_swap_multi_in_multi pairs' p  
   end.
 
-Section SMALL_STEP_EXT.
-  Variable L1: Smallstep.semantics.
-
-  Theorem forward_simulation_refl: forward_simulation L1 L1.
-  Proof.
-    eapply forward_simulation_step with (match_states := eq).
-    auto. intros; eauto. intros; subst; auto.
-    intros; subst; eauto.
-  Qed. 
-
-End SMALL_STEP_EXT.
-
 (** Extension from Globleenvs.v *)
-Section GENV_EXT.
+(* Section GENV_EXT.
     Section TRANSF_PROGRAM_EXT.
 
     Context {A B V W: Type}.
@@ -234,85 +278,16 @@ Section GENV_EXT.
         end.
 
     End TRANSF_PROGRAM_EXT.
-End GENV_EXT.
+End GENV_EXT. *)
+
+
 
 Inductive match_fundef (p: program): fundef -> fundef -> Prop :=
   | match_fundef_same: forall f tf, match_fundef p f tf  
   | match_fundef_swap_nth: forall n f,
-      match_fundef p (Internal f) (Internal (try_swap_nth_func n f))
-.
+      match_fundef p (Internal f) (Internal (try_swap_nth_func n f)).
+
 Definition match_varinfo_eq: unit -> unit -> Prop := eq.
-
-Section SIMULATION_FRAMEWORK.
-
-  Variable return_address_offset: function -> code -> ptrofs -> Prop.
-  (* Variable funid: ident. *)
-  
-  Definition transf_program_one (transf_def: ident -> fundef -> fundef) :=
-    transform_partial_program2 
-      (fun i f => OK (transf_def i f)) 
-      (fun i (v:unit) => OK v).
-
-  Definition transf_single_fun_fsim_preserve (transf_def: ident -> fundef -> fundef):=
-    forall prog tprog, 
-    (* let transf_fun := (fun i f => if ident_eq i funid then transf_def f else OK f) in
-    let transf_var := (fun (i: ident) (v:unit) => OK v) in *)
-    transform_partial_program2 
-      (fun i f => OK (transf_def i f)) 
-      (fun i v => OK v) prog = OK tprog ->
-    forward_simulation (Mach.semantics return_address_offset prog) 
-    (Mach.semantics return_address_offset tprog).
-
-  (* a sequence of correct transformation *)
-  Inductive transf_fundef_list_preserved: list (ident -> fundef -> fundef) -> Prop :=
-    | transf_fundef_list_preserved_nil: 
-        transf_fundef_list_preserved nil
-    | transf_fundef_list_preserved_cons:
-      forall transf_def lfundef,
-        transf_single_fun_fsim_preserve transf_def ->
-        transf_fundef_list_preserved lfundef ->
-        transf_fundef_list_preserved (transf_def :: lfundef)
-  .
-
-  Fixpoint transf_program (tfl: list (ident -> fundef -> fundef)) (p: program) := 
-    match tfl with
-    | nil => OK p
-    | transf_fundef :: tfl' => 
-        do p' <- transf_program_one transf_fundef p;
-        transf_program tfl' p'
-    end.
-
-  Variable tfl: list (ident -> fundef -> fundef).
-  Hypothesis safe_list: transf_fundef_list_preserved tfl.
-
-  (* Let transf_fun := (fun i f => if ident_eq i funid then transf_fundef_fold tfl f else f).
-  Let transf_fun_res := (fun i f => if ident_eq i funid then OK (transf_fundef_fold tfl f) else OK f).
-  Let transf_var_res := (fun (i: ident) (v:unit) => OK v). *)
-
-  (* Let transf_fundef_program := 
-    transform_partial_program2 transf_fun_res transf_var_res. *)
-
-  Variable prog: program.
-  Variable tprog: program.
-  Hypothesis TRANSF_PROG: transf_program tfl prog = OK tprog.
-  
-  Theorem forward_simulation_transformed:
-    forward_simulation (Mach.semantics return_address_offset prog) 
-                       (Mach.semantics return_address_offset tprog).
-  Proof.
-    revert prog tprog TRANSF_PROG.
-    induction safe_list; intros.
-    - inv TRANSF_PROG. apply forward_simulation_refl.
-    - inv safe_list. specialize (IHt H3).
-      simpl in TRANSF_PROG. monadInv TRANSF_PROG. rename x into tmprog.
-      eapply compose_forward_simulations 
-        with (L2:= semantics return_address_offset tmprog); auto.
-  Qed.
-
-  (* Definition real_match_prog (prog tprog: program) :=
-    match_program (fun ctx f tf => real_transf_fundef f = OK tf) eq prog tprog. *)
-
-End SIMULATION_FRAMEWORK.
 
 Inductive match_stackframe: stackframe -> stackframe -> Prop :=
   | match_stackframes_intro:
@@ -323,6 +298,13 @@ Inductive match_stackframe: stackframe -> stackframe -> Prop :=
       match_stackframe (Stackframe f sp ra c)
                        (Stackframe f' sp' ra' c')
 .
+
+Lemma match_stack_refl: forall stk, match_stackframe stk stk.
+Proof. 
+  intros. destruct stk. eapply match_stackframes_intro; auto. 
+  eapply try_swap_at_tail.
+Qed.
+
 Definition match_stack := Forall2 match_stackframe.
 
 Inductive match_states: state -> state -> Prop :=
@@ -350,20 +332,35 @@ Inductive match_states: state -> state -> Prop :=
       match_states (Returnstate sl rs m)
                    (Returnstate sl' rs' m')
 .
-Lemma match_stack_refl: forall stk, match_stackframe stk stk.
-Proof. 
-  intros. destruct stk. eapply match_stackframes_intro; auto. 
-  eapply try_swap_at_tail.
-Qed.
+
+Definition measure (s: state): nat:=
+  match s with
+  | State sl f sp c rs m => length c
+  | _ => O
+  end.
 
 (** Correctness proof of general correctness of instruction scheduling algorithm*)
 
 (** Step 1: prove the correctness of one single swap *)
 
-(* Definition match_prog (funid: ident) (n: nat) (p tp: program) :=
-  match_program (fun _ f tf => transf_fundef_try_swap_nth n f = OK tf) eq p tp. *)
 
+Definition match_prog (funid: ident) (n: nat) (prog tprog: program) :=
+  let transf_fun := (fun i f => if ident_eq i funid 
+    then transf_fundef_try_swap_nth n f else OK f) in
+  let transf_var := (fun (i: ident) (v:unit) => OK v) in
+  match_program_gen match_fundef match_varinfo_eq prog prog tprog.
 
+Lemma transf_program_match:
+forall funid n prog tprog, transf_program_try_swap_nth_in_one funid n prog = OK tprog -> match_prog funid n prog tprog.
+Proof.
+    intros. 
+    eapply match_transform_partial_program2. eapply H.
+    2: { intros. simpl in H0. inv H0; apply eq_refl. }
+    intros. simpl in H0. destruct (ident_eq).
+    - destruct f; inv H0.
+      apply match_fundef_swap_nth. apply match_fundef_same.
+    - inv H; apply match_fundef_same.
+Qed.
 
 Section SINGLE_SWAP_CORRECTNESS.
 
@@ -374,32 +371,14 @@ Section SINGLE_SWAP_CORRECTNESS.
   (* only try to swap at one pair inside one function *)
   Variable funid: ident.
   Variable n: nat.
+
   (* Hypothesis TRANSF: match_prog prog tprog. *)
-  Hypothesis TRANSF_PROG: transf_program_try_swap_nth_in_one funid n prog = OK tprog.
-  Let step := step return_address_offset.
+
+  Hypothesis TRANSF: match_program_gen match_fundef match_varinfo_eq prog prog tprog.
 
   Let ge := Genv.globalenv prog.
   Let tge := Genv.globalenv tprog.
-
-  Let transf_fun := (fun i f => if ident_eq i funid then transf_fundef_try_swap_nth n f else OK f).
-  Let transf_var := (fun (i: ident) (v:unit) => OK v).
-
-  
-  
-  Lemma TRANSF: match_program_gen match_fundef match_varinfo_eq prog prog tprog.
-  Proof. 
-    eapply match_transform_partial_program2. eapply TRANSF_PROG.
-    2: { intros. simpl in H. inv H; apply eq_refl. }
-    intros. simpl in H. destruct (ident_eq).
-    - destruct f; inv H.
-      apply match_fundef_swap_nth. apply match_fundef_same.
-    - inv H; apply match_fundef_same.
-  Qed.
-
-  (** Note: linking was not supported at current time 
-      because it requires "Level B Correctness" of SepCompCert@POPL'16
-      which is not ported into the CompCert 3.12 code base. 
-      We still prove follow the CompCert 2.6 framework for now *)
+  Let step := step return_address_offset.
 
   Lemma symbols_preserved:
     forall (s: ident), Genv.find_symbol tge s = Genv.find_symbol ge s.
@@ -411,12 +390,12 @@ Section SINGLE_SWAP_CORRECTNESS.
 
   Lemma independ_two_step_match:
       forall stk1 stk1' f sp bb rs1 m1
-      s1 s3 s1' s3' i1 i2 t t'
+      s3 s3' i1 i2 t t'
       (INDEP: happens_before i1 i2 = false)
-      (S1: s1 = State stk1 f sp (i1::i2::bb) rs1 m1)
+      (s1:= State stk1 f sp (i1::i2::bb) rs1 m1)
       (STEP13: starN step ge 2 s1 t s3)
-      (S1': s1' = State stk1' f sp (i2::i1::bb) rs1 m1)
-      (MATCH: match_stack stk1 stk1')
+      (s1':= State stk1' f sp (i2::i1::bb) rs1 m1)
+      (MATCH: match_states s1 s1')
       (STEP13': starN step ge 2 s1' t' s3'),
           match_states s3 s3' .
   Proof.
@@ -442,6 +421,16 @@ Section SINGLE_SWAP_CORRECTNESS.
           apply match_local_block. *)
         
   Admitted.
+
+  Lemma simulation:
+  forall s1 t s1', step ge s1 t s1' ->
+  forall s2, match_states s1 s2 ->
+  (exists s2', plus step tge s2 t s2' /\ match_states s1' s2')
+  \/ (measure s1' < measure s1 /\ t = E0 /\ match_states s1' s2)%nat.
+  Proof.
+    induction 1.
+  Admitted.
+
 
   Lemma transf_initial_states:
     forall st1, initial_state prog st1 ->
@@ -480,10 +469,44 @@ Section SINGLE_SWAP_CORRECTNESS.
 End SINGLE_SWAP_CORRECTNESS.
 
 
-Section SIMGLE_FUNC_MULTI_SWAP.
+Definition transf_function (f: Mach.function) : res Mach.function.
+Admitted.
+
+Definition transf_fundef (f: Mach.fundef) : res Mach.fundef :=
+  AST.transf_partial_fundef transf_function f.
+
+Definition transf_program (p: Mach.program): res Mach.program :=
+  transform_partial_program transf_fundef p.
+
+Definition match_prog (p: Mach.program) (tp: Mach.program) :=
+  match_program (fun ctx f tf => transf_fundef f = OK tf) eq p tp.
+
+Lemma transf_program_match:
+  forall p tp, transf_program p = OK tp -> match_prog p tp.
+Proof.
+  intros. eapply match_transform_partial_program; eauto.
+Qed.
+
+Section SCHEDULING_CORRECTNESS.
 
   Variable prog: program.
   Variable tprog: program.
+
+  Hypothesis TRANSF: match_prog prog tprog.
+
+  Lemma to_sequence_transf (p: program):
+  exists lfd, 
+    transf_program p = transf_program_sequence lfd p.
+  Proof. 
+    unfold match_prog, match_program in TRANSF.
+    unfold match_program_gen in TRANSF.
+    destruct TRANSF as [ TRANSF_ [? ?]]; clear TRANSF.
+    unfold transf_program, transform_partial_program .
+    unfold transform_partial_program2. 
+
+  Admitted.
+
+
   Variable return_address_offset: function -> code -> ptrofs -> Prop.
   
   (* only try to swap at one pair inside one function *)
