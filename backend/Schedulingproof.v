@@ -8,8 +8,8 @@ Import ListNotations.
 Open Scope list_scope. 
 
 (** TODO: move to TopoSort files *)
-Require Import RelationClasses.
-Section SWAP_ONE_PAIR.
+Require Import Relations.Relation_Definitions.
+Section TOPO.
   Open Scope nat_scope.
   Context {A: Type}.
   Variable (rel: A -> A -> bool).
@@ -22,28 +22,29 @@ Section SWAP_ONE_PAIR.
     | Datatypes.S n', i :: l' => try_swap n' l'
     end. 
 
-    Lemma try_swap_rm_head: 
-      forall (n:nat) l a, 0 < n -> try_swap n (a :: l) = a :: try_swap (n-1) l.
-    Proof. Admitted.
+  Lemma try_swap_rm_head: 
+    forall (n:nat) l a, 0 < n -> try_swap n (a :: l) = a :: try_swap (n-1) l.
+  Proof. Admitted.
   
-    Lemma try_swap_at_tail: forall l, try_swap (length l) l = l.
-    Proof.
-      assert(try_swap_at_tail_aux: forall l a, 
-        try_swap (length (a::l)) (a::l) = a :: try_swap (length l) l ).
-      { intros l. induction l; intros. simpl; auto. rewrite  IHl. 
-        admit. (* TODO not a problem; need to reason about length *) 
-      }
-      induction l. simpl; auto.
-      rewrite try_swap_at_tail_aux. rewrite IHl; auto.
-    Admitted.
+  Lemma try_swap_at_tail: forall l, try_swap (length l) l = l.
+  Proof.
+    assert(try_swap_at_tail_aux: forall l a, 
+      try_swap (length (a::l)) (a::l) = a :: try_swap (length l) l ).
+    { intros l. induction l; intros. simpl; auto. rewrite  IHl. 
+      admit. (* TODO not a problem; need to reason about length *) 
+    }
+    induction l. simpl; auto.
+    rewrite try_swap_at_tail_aux. rewrite IHl; auto.
+  Admitted.
 
-    Section DECIDE_REL.
-      Variable (Rel: A -> A -> Prop).
-      Hypothesis decide_rel: forall a1 a2, Rel a1 a2 <-> rel a1 a2 = true.
-      
-      (* Hypothesis porder: PartialOrder (@eq A) Rel. *)
-    End DECIDE_REL.
-End SWAP_ONE_PAIR.
+  Section DECIDE_REL.
+    Variable (Rel: A -> A -> Prop).
+    Hypothesis PO: order A Rel.
+    Hypothesis decide_rel: forall a1 a2, Rel a1 a2 <-> rel a1 a2 = true.
+
+    (* Hypothesis porder: PartialOrder (@eq A) Rel. *)
+  End DECIDE_REL.
+End TOPO.
 
 Section SMALL_STEP_EXT.
   Variable L1: Smallstep.semantics.
@@ -143,13 +144,16 @@ Fixpoint mregs_in_list (args: list mreg) (reg: mreg):=
 Definition solid_inst (i: instruction): bool :=
     match i with
     | Mcall _ _  | Mtailcall _ _  | Mbuiltin _ _ _ 
-    | Mlabel _  | Mgoto _ | Mcond _ _ _ 
+    | Mlabel _  | Mgoto _ | Mcond _ _ _ | Mjumptable _ _
     | Mreturn => true
     | _ => false
     end.
 
+(* Some true: memory write, Some false: memory read. None: no memory operation *)
 Definition mem_write (i: instruction): option bool :=
     match i with
+    | Mgetstack _ _ _ => Some false
+    | Msetstack _ _ _ => Some true
     | Mload _ _ _ dst => Some false
     | Mstore _ _ _ src => Some true
     | _ => None
@@ -193,7 +197,7 @@ Definition happens_before_ww (i1 i2: instruction) :=
 (* always a dependence since no alias analysis performed *)
 Definition happens_before_mem (i1 i2: instruction):=
     match mem_write i1, mem_write i2 with
-    | Some true, Some _ | Some _, Some true => true 
+    | Some true, _ | _, Some true => true 
     | _, _ => false
     end.
 
@@ -213,13 +217,6 @@ Definition happens_before (i1 i2: instruction): bool :=
     else false.
 
 Notation "i1 D~> i2":= (happens_before i1 i2) (at level 1).
-
-
-Lemma happens_before_inv_false: 
-    forall i1 i2, happens_before i1 i2 = false ->
-        True.
-Proof. auto. Qed.
-
 
 (** topo order from deta independence *)
 Parameter GraphType: Type.
@@ -281,6 +278,18 @@ Fixpoint transf_program_try_swap_multi_in_multi (pairs:list (ident * list nat))(
 End GENV_EXT. *)
 
 
+Definition rsagree (rs rs': regset) := 
+  forall r:mreg, Regmap.get r rs = Regmap.get r rs'. 
+
+Lemma rsagree_inv_swap: 
+  forall rs rs', rsagree rs rs' -> 
+    forall ra va rb vb, ra <> rb ->
+      rsagree (rs # ra <- va # rb <- vb) (rs' # rb <- vb # ra <- va).
+Proof.
+  intros; intro. unfold Regmap.get. unfold Regmap.set.
+  destruct (RegEq.eq r ra); destruct (RegEq.eq r rb); subst; simpl; auto.
+  - destruct H0; auto. - apply H. 
+Qed.
 
 Inductive match_fundef (p: program): fundef -> fundef -> Prop :=
   | match_fundef_same: forall f tf, match_fundef p f tf  
@@ -307,28 +316,32 @@ Qed.
 
 Definition match_stack := Forall2 match_stackframe.
 
+(* try-swap will not swap two inst. one of which contains mem. write *)
+Definition match_mem (m m': mem) := eq m m'.
+
 Inductive match_states: state -> state -> Prop :=
   | match_regular_states: 
       forall sl sl' f f' sp sp' n c c' rs rs' m m'
       (STK: match_stack sl sl')
       (FUNC: f = f') (SP: sp = sp')
       (CODE: try_swap_code n c = c' )
-      (RS: rs = rs') (MEM: m = m'),
+      (RS: rsagree rs rs') 
+      (MEM: match_mem m m'),
       match_states (State sl f sp c rs m)
                    (State sl' f' sp' c' rs' m')
   | match_callstate:
       forall sl sl' f f' rs rs' m m'
       (STK: match_stack sl sl')
       (FUNC: f = f')        (** TODO: maybe too tough? can we makesure function pointer values are kept during compilation ?  - though not hard to modify to a looser one *)
-      (RS: rs = rs')        (** TODO: maybe too tough? do we need a looser definition for regset's match? *)
-      (MEM: m = m'),        (** Memory are no way to be different, since we prevented such swapping *)
+      (RS: rsagree rs rs')        (** TODO: maybe too tough? do we need a looser definition for regset's match? *)
+      (MEM: match_mem m m'),        (** Memory are no way to be different, since we prevented such swapping *)
       match_states (Callstate sl f rs m)
                    (Callstate sl' f' rs' m')
   | match_returnstate:
       forall sl sl' rs rs' m m'
       (STL: match_stack sl sl')
-      (RS: rs = rs')        (** TODO: maybe too tough? do we need a looser definition for regset's match? *)
-      (MEM: m = m'),
+      (RS: rsagree rs rs')        (** TODO: maybe too tough? do we need a looser definition for regset's match? *)
+      (MEM: match_mem m m'),
       match_states (Returnstate sl rs m)
                    (Returnstate sl' rs' m')
 .
@@ -346,7 +359,7 @@ Definition measure (s: state): nat:=
 
 Definition match_prog (funid: ident) (n: nat) (prog tprog: program) :=
   let transf_fun := (fun i f => if ident_eq i funid 
-    then transf_fundef_try_swap_nth n f else OK f) in
+                                then transf_fundef_try_swap_nth n f else OK f) in
   let transf_var := (fun (i: ident) (v:unit) => OK v) in
   match_program_gen match_fundef match_varinfo_eq prog prog tprog.
 
@@ -389,12 +402,12 @@ Section SINGLE_SWAP_CORRECTNESS.
   Proof (Genv.senv_match TRANSF).
 
   Lemma independ_two_step_match:
-      forall stk1 stk1' f sp bb rs1 m1
+      forall stk1 stk1' f f' sp sp' bb rs1 rs1' m1 m1'
       s3 s3' i1 i2 t t'
       (INDEP: happens_before i1 i2 = false)
       (s1:= State stk1 f sp (i1::i2::bb) rs1 m1)
       (STEP13: starN step ge 2 s1 t s3)
-      (s1':= State stk1' f sp (i2::i1::bb) rs1 m1)
+      (s1':= State stk1' f' sp' (i2::i1::bb) rs1' m1')
       (MATCH: match_states s1 s1')
       (STEP13': starN step ge 2 s1' t' s3'),
           match_states s3 s3' .
@@ -402,24 +415,72 @@ Section SINGLE_SWAP_CORRECTNESS.
       intros.
       inv STEP13. rename s' into s2. inv H1. inv H3. rename t0 into t2.
       inv STEP13'. rename s' into s2'. inv H3. inv H5. rename t0 into t1'. rename t4 into t2'.
-
-      inv H0.
-      - inv H1; unfold happens_before in INDEP; simpl in INDEP.
-          (* + inv H2. inv H4. split; auto.  *)
-          (* apply match_same_locset.
-          intros. Search loc.
-          Print loc. Print slot.
-              Print Locations.Locmap.set.
-              admit.
-          +  admit.
-          + admit.
-          + unfold data_depends_rw in INDEP; simpl in INDEP.
-          remember (mreg_eqb res src) as b; destruct (b); inv INDEP.
-          assert(REGeq: res <> src).
-              intro. rewrite H in Heqb. rewrite mreg_eqb_refl in Heqb. inv Heqb.
-          split. Focus 2.
-          apply match_local_block. *)
-        
+(* TODO: use Ltac to reduce proof cost *)
+      assert(B:forall b b1: bool, (if b then b1 else b1) = b1). intros; destruct b; auto.
+      (* 16 branches in total need to reason dependences; others can be discriminated instinctly *) 
+      inv H0; inv H1; unfold happens_before in INDEP; simpl in INDEP; 
+      try rewrite B in INDEP; try discriminate INDEP.
+      (* Mlabel D~> i2 : trivial & discriminated *)
+      (* Mgetstack D~> i2 *)
+        (* Mgetstack D~> Mgetstack *)
+        + inv H2; inv H4. 
+          eapply match_regular_states; eauto; inv MATCH; eauto.
+          eapply try_swap_at_tail. inv MEM.
+          rewrite H11 in H14; inv H14. rewrite H12 in H13; inv H13.
+          eapply rsagree_inv_swap; eauto.
+          simpl in INDEP.
+          
+          (* TODO: two irrelevent reg update *)
+          admit.
+        (* Mgetstack D~> Msetstack *)
+        (* Mgetstack D~> Mgetparam  *)
+        + inv H2; inv H4. 
+          eapply match_regular_states; eauto; inv MATCH; eauto.
+          eapply try_swap_at_tail. 
+          admit.
+        (* Mgetstack D~> Mop  *)
+        + inv H2; inv H4. 
+          eapply match_regular_states; eauto; inv MATCH; eauto.
+          eapply try_swap_at_tail. inv MEM.
+          rewrite H12 in H13; inv H13. Print "##".
+          admit. 
+        (* Mgetstack D~> Mload  *)
+        + inv H2; inv H4. admit.
+        (* Mgetstack D~> Mstore  *)
+      (* Msetstack D~> i2: trivial & discriminated *)
+      (* Mgetparam D~> i2 *)
+        (* Mgetparam D~> Mgetstack *)
+        + admit.
+        (* Mgetparam D~> Mgetparam *)
+        + admit.
+        (* Mgetparam D~> Mop *)
+        + admit.
+        (* Mgetparam D~> Mload *)
+        + admit.
+      (* Mop D~> i2 *)
+        (* Mop D~> Mgetstack *)
+        + admit.
+        (* Mop D~> Mgetparam *)
+        + admit.
+        (* Mop D~> Mop *)
+        + admit.
+        (* Mop D~> Mload *)
+        + admit.
+      (* Mload D~> i2 *)
+        (* Mload D~> Mgetstack *)
+        + admit.
+        (* Mload D~> Mgetparam *)
+        + admit.
+        (* Mload D~> Mop *)
+        + admit.
+        (* Mload D~> Mload *)
+        + admit.
+      (* Mstore D~> i2: trivial & discriminated *)
+      (* Mcall D~> i2: trivial & discriminated *)
+      (* Mtailcall D~> i2: trivial & discriminated *)
+      (* Mbuiltin D~> i2: trivial & discriminated *)
+      (* Mgoto D~> i2: trivial & discriminated *)
+      (* Mcond D~> i2: trivial & discriminated*)
   Admitted.
 
   Lemma simulation:
