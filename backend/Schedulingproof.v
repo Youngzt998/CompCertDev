@@ -131,8 +131,6 @@ Section SIMULATION_FRAMEWORK.
   
 End SIMULATION_FRAMEWORK.
 
-
-
 (** [i1: reg = ...] :: [i2: ... = op args] :: [...] *)
 Fixpoint mregs_in_list (args: list mreg) (reg: mreg):=
     match args with
@@ -143,6 +141,7 @@ Fixpoint mregs_in_list (args: list mreg) (reg: mreg):=
 
 Definition solid_inst (i: instruction): bool :=
     match i with
+    | Mgetparam _ _ _ => true  (* TODO: is this fine? *)
     | Mcall _ _  | Mtailcall _ _  | Mbuiltin _ _ _ 
     | Mlabel _  | Mgoto _ | Mcond _ _ _ | Mjumptable _ _
     | Mreturn => true
@@ -162,7 +161,7 @@ Definition mem_write (i: instruction): option bool :=
 (* (src register, false:read/true:write/None mem) *)
 Definition get_dst (i: instruction): option mreg :=
     match i with
-    | Mgetstack _ _ dst
+    | Mgetstack _ _ dst | Mgetparam _ _ dst
     | Mop _ _ dst | Mload _ _ _ dst => Some dst
     | _ => None
     end. 
@@ -170,7 +169,7 @@ Definition get_dst (i: instruction): option mreg :=
 Definition get_srcs (i: instruction): list mreg :=
     match i with
     | Mop op args res => args
-    | Msetstack src _ _  |Mstore _ _ _ src => src::nil
+    | Msetstack src _ _  | Mstore _ _ _ src => src::nil
     | _ => nil
     end. 
 
@@ -188,7 +187,7 @@ Definition happens_before_rw (i1 i2: instruction) :=
 (* WAW/Output-dependence: i1 write register r, then i2 write register r*)
 Definition happens_before_ww (i1 i2: instruction) :=
     match get_dst i1, get_dst i2 with 
-    | Some dst1, Some dst2 => 
+    | Some dst1, Some dst2 =>
         if mreg_eq dst1 dst2 then true else false
     | _, _ => false
     end.
@@ -316,6 +315,10 @@ Qed.
 
 Definition match_stack := Forall2 match_stackframe.
 
+Lemma match_stack_inv_parent_sp:
+  forall stk stk', match_stack stk stk' -> parent_sp stk = parent_sp stk'.
+Proof. destruct 1; simpl; auto. inv H; auto. Qed. 
+
 (* try-swap will not swap two inst. one of which contains mem. write *)
 Definition match_mem (m m': mem) := eq m m'.
 
@@ -410,14 +413,15 @@ Section SINGLE_SWAP_CORRECTNESS.
       (s1':= State stk1' f' sp' (i2::i1::bb) rs1' m1')
       (MATCH: match_states s1 s1')
       (STEP13': starN step ge 2 s1' t' s3'),
-          match_states s3 s3' .
+          match_states s3 s3'.
   Proof.
       intros.
       inv STEP13. rename s' into s2. inv H1. inv H3. rename t0 into t2.
       inv STEP13'. rename s' into s2'. inv H3. inv H5. rename t0 into t1'. rename t4 into t2'.
 (* TODO: use Ltac to reduce proof cost *)
       assert(B:forall b b1: bool, (if b then b1 else b1) = b1). intros; destruct b; auto.
-      (* 16 branches in total need to reason dependences; others can be discriminated instinctly *) 
+      (* 9 branches in total need to reason dependences; others can be discriminated instinctly *) 
+          (* 16 branch if Mgetparam is considered *)
       inv H0; inv H1; unfold happens_before in INDEP; simpl in INDEP; 
       try rewrite B in INDEP; try discriminate INDEP.
       (* Mlabel D~> i2 : trivial & discriminated *)
@@ -428,40 +432,38 @@ Section SINGLE_SWAP_CORRECTNESS.
           eapply try_swap_at_tail. inv MEM.
           rewrite H11 in H14; inv H14. rewrite H12 in H13; inv H13.
           eapply rsagree_inv_swap; eauto.
-          simpl in INDEP.
-          
-          (* TODO: two irrelevent reg update *)
-          admit.
-        (* Mgetstack D~> Msetstack *)
+          unfold happens_before_ww in INDEP; simpl in INDEP.
+          destruct (mreg_eq dst dst0); try discriminate INDEP; auto.
         (* Mgetstack D~> Mgetparam  *)
-        + inv H2; inv H4. 
+        (* + inv H2; inv H4. 
           eapply match_regular_states; eauto; inv MATCH; eauto.
-          eapply try_swap_at_tail. 
-          admit.
+          eapply try_swap_at_tail. inv MEM.
+          erewrite match_stack_inv_parent_sp in H18.
+          rewrite H12 in H15; inv H15. erewrite H18 in H14. inv H14. 
+          intro; unfold Regmap.get. 
+          destruct (mreg_eq r dst); destruct (mreg_eq r dst0); 
+          destruct (mreg_eq r temp_for_parent_frame); subst; simpl; eauto.
+          admit. *)
         (* Mgetstack D~> Mop  *)
         + inv H2; inv H4. 
           eapply match_regular_states; eauto; inv MATCH; eauto.
           eapply try_swap_at_tail. inv MEM.
-          rewrite H12 in H13; inv H13. Print "##".
+          rewrite H12 in H13; inv H13. Print destroyed_by_op. 
+          Print "##".
           admit. 
         (* Mgetstack D~> Mload  *)
         + inv H2; inv H4. admit.
         (* Mgetstack D~> Mstore  *)
       (* Msetstack D~> i2: trivial & discriminated *)
-      (* Mgetparam D~> i2 *)
+      (* Mgetparam D~> i2: discriminated *)
         (* Mgetparam D~> Mgetstack *)
-        + admit.
         (* Mgetparam D~> Mgetparam *)
-        + admit.
         (* Mgetparam D~> Mop *)
-        + admit.
         (* Mgetparam D~> Mload *)
-        + admit.
       (* Mop D~> i2 *)
         (* Mop D~> Mgetstack *)
         + admit.
-        (* Mop D~> Mgetparam *)
-        + admit.
+        (* Mop D~> Mgetparam: discriminated *)
         (* Mop D~> Mop *)
         + admit.
         (* Mop D~> Mload *)
@@ -470,7 +472,6 @@ Section SINGLE_SWAP_CORRECTNESS.
         (* Mload D~> Mgetstack *)
         + admit.
         (* Mload D~> Mgetparam *)
-        + admit.
         (* Mload D~> Mop *)
         + admit.
         (* Mload D~> Mload *)
