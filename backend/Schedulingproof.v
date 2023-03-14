@@ -1,3 +1,67 @@
+Require Import Globalenvs Events Smallstep.
+Section SMALL_STEP_EXT.
+  Variable L: Smallstep.semantics.
+
+  Theorem forward_simulation_refl: forward_simulation L L.
+  Proof.
+    eapply forward_simulation_step with (match_states := eq).
+    auto. intros; eauto. intros; subst; auto.
+    intros; subst; eauto.
+  Qed. 
+
+  Section SIMULATION_BIG_N.
+
+    Variable L1: Smallstep.semantics.
+    Variable L2: Smallstep.semantics.
+    Variable match_states: Smallstep.state L1 -> Smallstep.state L2 -> Prop.
+    
+    Hypothesis public_preserved:
+    forall id, Senv.public_symbol (symbolenv L2) id = Senv.public_symbol (symbolenv L1) id.
+    Hypothesis initial_states:
+      forall s1, Smallstep.initial_state L1 s1 ->
+      exists s2, Smallstep.initial_state L2 s2 /\ match_states s1 s2.
+    Hypothesis final_states:
+      forall s1 s2 r,
+      match_states s1 s2 -> Smallstep.final_state L1 s1 r -> Smallstep.final_state L2 s2 r.
+
+    Let starn1 := starN (step L1) (globalenv L1).
+    Let starn2 := starN (step L2) (globalenv L2).
+    Inductive match_before: nat -> Smallstep.state L1 -> Smallstep.state L2 -> Prop :=
+    | match_before_0: forall s s', match_states s s' -> match_before 0 s s'
+    | match_before_n: 
+        forall s t sn s' n, 
+          match_states s s' -> starn1 n s t sn -> match_before n sn s' 
+    .
+
+    Inductive one_or_n_step_sim (s1 s2: state L1) (s1': state L2) 
+          (MATCH: match_states s1 s1'): Prop :=
+      | one_step_match: forall t,
+          (Step L1 s1 t s2 -> exists s2', Step L2 s1' t s2' /\ match_states s2 s2') ->
+            one_or_n_step_sim s1 s2 s1' MATCH
+      | n_step_match: forall t n,
+          (starn1 n s1 t s2 -> exists s2', starn2 n s1' t s2' /\ match_states s2 s2') ->
+            one_or_n_step_sim s1 s2 s1' MATCH
+      . Check Eventually L1.
+
+    (* Hypothesis big_step_simulation:
+      forall s1, exists t s1',
+
+        (Step L1 s1 t s1' -> ) .
+      
+      
+      t s1', Step L1 s1 t s1' ->
+      forall i s2, match_states i s1 s2 ->
+      exists s1'' i' s2',
+          Star L1 s1' E0 s1''
+      /\ (Plus L2 s2 t s2' \/ (Star L2 s2 t s2' /\ order i' i))
+      /\ match_states i' s1'' s2'. *)
+
+  End SIMULATION_BIG_N.
+
+
+End SMALL_STEP_EXT.
+
+
 
 Require Import Coqlib Maps BoolEqual.
 Require Import AST Integers Values Events Memory Linking Globalenvs Smallstep.
@@ -46,17 +110,7 @@ Section TOPO.
   End DECIDE_REL.
 End TOPO.
 
-Section SMALL_STEP_EXT.
-  Variable L1: Smallstep.semantics.
 
-  Theorem forward_simulation_refl: forward_simulation L1 L1.
-  Proof.
-    eapply forward_simulation_step with (match_states := eq).
-    auto. intros; eauto. intros; subst; auto.
-    intros; subst; eauto.
-  Qed. 
-
-End SMALL_STEP_EXT.
 
 
 Require Import Errors.
@@ -192,11 +246,11 @@ Definition happens_before_ww (i1 i2: instruction) :=
     | _, _ => false
     end.
 
-(* Mem dependence: one of i1 and i2 write to memory *)
+(* Mem dependence: one of i1 and i2 write to memory, another also read/write memory *)
 (* always a dependence since no alias analysis performed *)
 Definition happens_before_mem (i1 i2: instruction):=
     match mem_write i1, mem_write i2 with
-    | Some true, _ | _, Some true => true 
+    | Some true, Some _ | Some _, Some true => true 
     | _, _ => false
     end.
 
@@ -420,8 +474,7 @@ Section SINGLE_SWAP_CORRECTNESS.
       inv STEP13'. rename s' into s2'. inv H3. inv H5. rename t0 into t1'. rename t4 into t2'.
 (* TODO: use Ltac to reduce proof cost *)
       assert(B:forall b b1: bool, (if b then b1 else b1) = b1). intros; destruct b; auto.
-      (* 9 branches in total need to reason dependences; others can be discriminated instinctly *) 
-          (* 16 branch if Mgetparam is considered *)
+      (* 13 branches in total need to reason dependences; others can be discriminated instinctly *) 
       inv H0; inv H1; unfold happens_before in INDEP; simpl in INDEP; 
       try rewrite B in INDEP; try discriminate INDEP.
       (* Mlabel D~> i2 : trivial & discriminated *)
@@ -453,20 +506,22 @@ Section SINGLE_SWAP_CORRECTNESS.
           admit. 
         (* Mgetstack D~> Mload  *)
         + inv H2; inv H4. admit.
-        (* Mgetstack D~> Mstore  *)
+        
       (* Msetstack D~> i2: trivial & discriminated *)
+        (* Msetstack D~> Mop *)
+        + admit.
       (* Mgetparam D~> i2: discriminated *)
-        (* Mgetparam D~> Mgetstack *)
-        (* Mgetparam D~> Mgetparam *)
-        (* Mgetparam D~> Mop *)
-        (* Mgetparam D~> Mload *)
       (* Mop D~> i2 *)
-        (* Mop D~> Mgetstack *)
+        (* Mop D~> Mgetstack  *)
+        + admit.
+        (* Mop D~> Mset  *)
         + admit.
         (* Mop D~> Mgetparam: discriminated *)
         (* Mop D~> Mop *)
         + admit.
         (* Mop D~> Mload *)
+        + admit.
+        (* Mop D~> Mstore *)
         + admit.
       (* Mload D~> i2 *)
         (* Mload D~> Mgetstack *)
@@ -476,7 +531,9 @@ Section SINGLE_SWAP_CORRECTNESS.
         + admit.
         (* Mload D~> Mload *)
         + admit.
-      (* Mstore D~> i2: trivial & discriminated *)
+      (* Mstore D~> i2: *)
+        (* Mstore D~> Mop *)
+        + admit.
       (* Mcall D~> i2: trivial & discriminated *)
       (* Mtailcall D~> i2: trivial & discriminated *)
       (* Mbuiltin D~> i2: trivial & discriminated *)
@@ -484,15 +541,27 @@ Section SINGLE_SWAP_CORRECTNESS.
       (* Mcond D~> i2: trivial & discriminated*)
   Admitted.
 
+  Let tplus:= Plus (semantics return_address_offset tprog).
+  Let tEventually:= Eventually (semantics return_address_offset prog).
+  
   Lemma simulation:
   forall s1 t s1', step ge s1 t s1' ->
   forall s2, match_states s1 s2 ->
-  (exists s2', plus step tge s2 t s2' /\ match_states s1' s2')
-  \/ (measure s1' < measure s1 /\ t = E0 /\ match_states s1' s2)%nat.
-  Proof.
-    induction 1.
+    exists n s2',
+      tplus s2 t s2' /\ tEventually n s1' (fun s1'' => match_states s1'' s2').
+  Proof. 
+    intros. inv H0.
+    (* State *)
+    - admit.
+    (* Callstate *)
+    - exists 0%nat. inv H. 
+      + eexists (State _ _ _ _ _ _ ). admit.
+      + eexists (State _ _ _ _ _ _ ). admit.
+    (* Returnstate *)
+    - exists 0%nat. inv H. inv STL. inv H1. eexists (State _ _ _ _ _ _ ). split.
+      + apply plus_one. eapply exec_return.
+      + eapply eventually_now. eapply match_regular_states; eauto. 
   Admitted.
-
 
   Lemma transf_initial_states:
     forall st1, initial_state prog st1 ->
@@ -505,7 +574,8 @@ Section SINGLE_SWAP_CORRECTNESS.
           apply (Genv.init_mem_match TRANSF); trivial. 
           rewrite (match_program_main TRANSF).
           rewrite symbols_preserved; auto. 
-      - apply match_callstate; auto. apply Forall2_nil.
+      - apply match_callstate; auto. apply Forall2_nil. 
+        intro; auto. hnf; auto.
   Qed.
 
   Lemma transf_final_states:
@@ -514,19 +584,20 @@ Section SINGLE_SWAP_CORRECTNESS.
   Proof. 
     intros. inv H0. inv H. inv STL.
     eapply final_state_intro.
-    eapply H1. trivial.
+    eapply H1. specialize (RS r0). unfold Regmap.get in RS.
+    erewrite <- RS. trivial.
   Qed.
   
   Theorem forward_simulation_transformed:
   forward_simulation (Mach.semantics return_address_offset prog) 
                      (Mach.semantics return_address_offset tprog).
   Proof.
-    eapply forward_simulation_star.
+    eapply forward_simulation_eventually_plus.
     - apply senv_preserved.
     - apply transf_initial_states.
     - apply transf_final_states.
-    -
-  Admitted.
+    - apply simulation.
+  Qed.
 
 End SINGLE_SWAP_CORRECTNESS.
 
@@ -540,11 +611,11 @@ Definition transf_fundef (f: Mach.fundef) : res Mach.fundef :=
 Definition transf_program (p: Mach.program): res Mach.program :=
   transform_partial_program transf_fundef p.
 
-Definition match_prog (p: Mach.program) (tp: Mach.program) :=
+Definition match_prog_real (p: Mach.program) (tp: Mach.program) :=
   match_program (fun ctx f tf => transf_fundef f = OK tf) eq p tp.
 
-Lemma transf_program_match:
-  forall p tp, transf_program p = OK tp -> match_prog p tp.
+Lemma transf_program_match_real:
+  forall p tp, transf_program p = OK tp -> match_prog_real p tp.
 Proof.
   intros. eapply match_transform_partial_program; eauto.
 Qed.
@@ -554,7 +625,7 @@ Section SCHEDULING_CORRECTNESS.
   Variable prog: program.
   Variable tprog: program.
 
-  Hypothesis TRANSF: match_prog prog tprog.
+  Hypothesis TRANSF: match_prog_real prog tprog.
 
   Lemma to_sequence_transf (p: program):
   exists lfd, 
@@ -575,16 +646,16 @@ Section SCHEDULING_CORRECTNESS.
   Variable funid: ident.
   Variable ln: list nat.
   (* Hypothesis TRANSF: match_prog prog tprog. *)
-  Hypothesis TRANSF_PROG: transf_program_try_swap_nth_in_one funid n prog = OK tprog.
+  (* Hypothesis TRANSF_PROG: transf_program_try_swap_nth_in_one funid ln prog = OK tprog. *)
   Let step := step return_address_offset.
 
   Let ge := Genv.globalenv prog.
   Let tge := Genv.globalenv tprog.
-
+(* 
   Let transf_fun := (fun i f => if ident_eq i funid then transf_fundef_try_swap_nth n f else OK f).
-  Let transf_var := (fun (i: ident) (v:unit) => OK v).
+  Let transf_var := (fun (i: ident) (v:unit) => OK v). *)
 
-End SIMGLE_FUNC_MULTI_SWAP.
+End SCHEDULING_CORRECTNESS.
 
 Require Import Errors.
 Open Scope error_monad_scope.
