@@ -385,7 +385,27 @@ Proof.
   eapply rsagree_inv_extcall_arg_pair; eauto.
 Qed.
 
-
+Lemma extcall_genv_irrelevent:
+forall ge1 ge2 ef args m1 t res m2,
+Senv.equiv ge1 ge2 -> 
+  external_call ef ge1 args m1 t res m2 ->
+  external_call ef ge2 args m1 t res m2.
+Proof. 
+  intros. destruct ef; simpl in *; eauto.
+  - eapply external_functions_properties; eauto.
+  (* - eapply external_functions_properties. unfold external_functions_sem. hnf in *)
+  - eapply builtin_or_external_sem_ok; eauto.
+  - eapply builtin_or_external_sem_ok; eauto.
+  - eapply volatile_load_ok; eauto.
+  - eapply volatile_store_ok; eauto.
+  - eapply extcall_malloc_ok; eauto.
+  - eapply extcall_free_ok; eauto.
+  - eapply extcall_memcpy_ok; eauto.
+  - eapply extcall_annot_ok; eauto.
+  - eapply extcall_annot_val_ok; eauto.
+  - eapply inline_assembly_properties; eauto.
+  - eapply extcall_debug_ok; eauto.
+Qed. 
 
 Inductive match_fundef (p: program): fundef -> fundef -> Prop :=
   | match_fundef_same: forall f, match_fundef p f f  
@@ -636,16 +656,12 @@ Section SINGLE_SWAP_CORRECTNESS.
         eapply plus_one. eapply exec_function_external; eauto.
         eapply match_stack_inv_parent_sp in STK. erewrite <- STK; eauto.
         eapply rsagree_inv_extcall_arguments; eauto.
-        admit. admit.
-        (* eapply eventually_now. eapply match_returnstate; eauto.
-          simpl; eauto. eapply rsagree_inv_undef_regs_destroyed; eauto.
-          unfold match_mem; auto. *)
-(*         
-          erewrite <- match_stack_inv_parent_ra; eauto. 
-          eapply eventually_now. eapply match_regular_states; eauto.
-          simpl; eauto. eapply rsagree_inv_undef_regs_destroyed; eauto.
-          unfold match_mem; auto. *)
-        
+        eapply extcall_genv_irrelevent in H8. eapply H8.
+        eapply senv_preserved.
+        eapply eventually_now. eapply match_returnstate; eauto.
+        simpl; eauto.
+        admit.
+        hnf; auto.
     (* Returnstate *)
     - exists 0%nat. inv H. inv STL. inv H1. eexists (State _ _ _ _ _ _ ). split.
       + apply plus_one. eapply exec_return.
