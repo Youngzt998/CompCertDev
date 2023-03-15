@@ -348,6 +348,9 @@ End GENV_EXT. *)
 Definition rsagree (rs rs': regset) := 
   forall r:mreg, Regmap.get r rs = Regmap.get r rs'. 
 
+Lemma rsagree_symmetric: symmetric _ rsagree.
+Proof. hnf; intros; intro; auto. Qed.
+
 Lemma rsagree_inv_swap: 
   forall rs rs', rsagree rs rs' -> 
     forall ra va rb vb, ra <> rb ->
@@ -366,6 +369,14 @@ Proof.
   destruct RegEq.eq; auto. eapply H.
 Qed.
 
+Lemma rsagree_inv_mreg_list:
+  forall lr rs rs', rsagree rs rs' ->
+    rs ## lr = rs' ## lr.
+Proof. 
+  intros lr. induction lr; simpl; auto; intros. specialize (IHlr _ _ H). 
+  rewrite <- IHlr. assert (rs a = rs' a). apply H. rewrite H0; auto. 
+Qed.
+
 Lemma rsagree_inv_undef_regs_destroyed:
   forall lr rs rs', rsagree rs rs' ->
     rsagree (undef_regs lr rs)
@@ -375,6 +386,8 @@ Proof.
   intro. unfold Regmap.get, Regmap.set. destruct (RegEq.eq r a); simpl; auto.
   apply IHlr; auto.
 Qed.
+
+
 
 Lemma rsagree_inv_extcall_arg:
   forall rs rs' m sp l v, 
@@ -406,6 +419,29 @@ Proof.
   eapply rsagree_inv_extcall_arg_pair; eauto.
 Qed.
 
+Lemma rsagree_inv_eval_builtin_arg:
+  forall ge rs rs' sp m arg var,
+  rsagree rs rs' -> eval_builtin_arg ge rs sp m arg var -> 
+    eval_builtin_arg ge rs' sp m arg var.
+Proof. 
+  intros. unfold rsagree, Regmap.get in H. induction H0; try rewrite H.
+  - apply eval_BA. - apply eval_BA_int. - apply eval_BA_long.
+  - apply eval_BA_float. - apply eval_BA_single.
+  - apply eval_BA_loadstack; auto. - apply eval_BA_addrstack.
+  - apply eval_BA_loadglobal; auto. - apply eval_BA_addrglobal.
+  - apply eval_BA_splitlong; auto. - apply eval_BA_addptr; auto.
+Qed.
+
+Lemma rsagree_inv_eval_builtin_args:
+  forall ge rs rs' sp m args vargs,
+  rsagree rs rs' -> eval_builtin_args ge rs sp m args vargs -> 
+    eval_builtin_args ge rs' sp m args vargs.
+Proof. 
+  intros. hnf in *. Check list_forall2_imply.
+  eapply list_forall2_imply. eapply H0. intros; auto. 
+  eapply rsagree_inv_eval_builtin_arg; eauto.
+Qed.
+
 Lemma rsagree_inv_undef_caller_save_regs:
   forall rs rs', rsagree rs rs' ->
     rsagree (undef_caller_save_regs rs) (undef_caller_save_regs rs').
@@ -423,11 +459,33 @@ Proof.
   unfold Regmap.set; destruct (RegEq.eq r rlo); destruct (RegEq.eq r rhi); simpl; eauto.
 Qed.
 
+Lemma rsagree_inv_set_res:
+  forall res v rs rs', rsagree rs rs' ->
+    rsagree (set_res res v rs) (set_res res v rs'). 
+Proof. 
+  intros res. unfold Regmap.get. induction res; simpl; auto; intros.
+  - apply rsagree_inv_update; auto.
+Qed. 
+
+Lemma rsagree_inv_find_function_ptr:
+  forall ge ros rs rs', rsagree rs rs' ->
+    find_function_ptr ge ros rs = find_function_ptr ge ros rs'.
+Proof. 
+  intros. destruct ros; auto. 
+  simpl. unfold rsagree, Regmap.get in H. rewrite H; auto.
+Qed.
+ 
+Lemma find_function_ptr_genv_irrelevent:
+  forall ge1 ge2 ros rs,
+    (forall (s: ident), Genv.find_symbol ge1 s = Genv.find_symbol ge2 s) ->
+      find_function_ptr ge1 ros rs = find_function_ptr ge2 ros rs.
+Proof. intros. destruct ros; auto; simpl. apply H. Qed.
+
 Lemma extcall_genv_irrelevent:
-forall ge1 ge2 ef args m1 t res m2,
-Senv.equiv ge1 ge2 -> 
-  external_call ef ge1 args m1 t res m2 ->
-  external_call ef ge2 args m1 t res m2.
+  forall ge1 ge2 ef args m1 t res m2,
+  Senv.equiv ge1 ge2 -> 
+    external_call ef ge1 args m1 t res m2 ->
+    external_call ef ge2 args m1 t res m2.
 Proof. 
   intros. destruct ef; simpl in *; eauto.
   - eapply external_functions_properties; eauto.
@@ -562,6 +620,13 @@ Section SINGLE_SWAP_CORRECTNESS.
     Senv.equiv ge tge.
   Proof (Genv.senv_match TRANSF).
 
+  (* Lemma rsagree_inv_eval_op:
+  forall sp op rs rs' args m, rsagree rs rs' ->
+    eval_operation ge sp op rs##args m = eval_operation ge sp op rs'##args m.
+  Proof.
+    intros.   *)
+
+
   Lemma independ_two_step_match:
       forall stk1 stk1' f f' sp sp' bb rs1 rs1' m1 m1'
       s3 s3' i1 i2 t t'
@@ -651,19 +716,81 @@ Section SINGLE_SWAP_CORRECTNESS.
   (s1':= State stk1' f' sp' (i :: c') rs1' m1') (MATCH: match_states s1 s1'),
     exists s2', step tge s1' t s2' /\ match_states s2 s2'.
   Proof.
-    intros. inv MATCH. inv STEP; eexists (State _ _ _ _ _ _);
-    eapply try_swap_head_not_change in CODE; edestruct CODE; split.
-    (* *)
+    intros. inv MATCH. inv STEP; eapply try_swap_head_not_change in CODE; edestruct CODE.
+    (* Mlabel *)
+    eexists (State _ _ _ _ _ _); split.
     eapply exec_Mlabel. eapply match_regular_states; eauto.
-    (* *)
-    eapply exec_Mgetstack. inv MEM. eapply H8. eapply match_regular_states; eauto.
-    eapply rsagree_inv_update; eauto.
-    (* *)
+    (* Mgetstack *)
+    eexists (State _ _ _ _ _ _); split.
+    eapply exec_Mgetstack. inv MEM. eapply H8. 
+    eapply match_regular_states; eauto. eapply rsagree_inv_update; eauto.
+    (* Msetstack *)
+    eexists (State _ _ _ _ _ _); split.
     eapply exec_Msetstack. specialize (RS src); unfold Regmap.get in RS. rewrite <- RS.
     inv MEM. eapply H8. eauto. 
     eapply match_regular_states; eauto. eapply rsagree_inv_undef_regs_destroyed; eauto. reflexivity.
-    (* *)
-    eapply exec_Mgetparam.
+    (* Mgetparam *)
+    eexists (State _ _ _ _ _ _); split.
+    eapply exec_Mgetparam; eauto.
+    (* eapply Genv.find_funct_ptr_match with 
+          (match_fundef:=match_fundef) (match_varinfo:=match_varinfo) in H8.
+    2: { eapply TRANSF. }
+    destruct H8 as [p [tf [FF [MF LO]]]]. destruct tf. inv MF. eapply FF.  *)
+    admit. admit. admit. admit.
+    (* Mop *)
+    eexists (State _ _ _ _ _ _); split.
+    eapply exec_Mop; eauto. erewrite <- rsagree_inv_mreg_list; eauto.
+    erewrite <- eval_operation_preserved. inv MEM. eexact H8. 
+    symmetry; eapply symbols_preserved.
+    eapply match_regular_states; eauto. 
+    eapply rsagree_inv_update; eapply rsagree_inv_undef_regs_destroyed; eauto.
+
+    (* Mload *)
+    eexists (State _ _ _ _ _ _); split.
+    eapply exec_Mload; inv MEM; eauto. erewrite rsagree_inv_mreg_list; eauto.
+    erewrite eval_addressing_preserved; eauto. eapply symbols_preserved.
+    eapply rsagree_symmetric; auto.
+    eapply match_regular_states; eauto.
+    eapply rsagree_inv_update; eapply rsagree_inv_undef_regs_destroyed; eauto.
+    
+    (* Mstore *)
+    eexists (State _ _ _ _ _ _); split.
+    eapply exec_Mstore; inv MEM. erewrite rsagree_inv_mreg_list; eauto.
+    erewrite eval_addressing_preserved; eauto. eapply symbols_preserved.
+    eapply rsagree_symmetric; eauto. specialize (RS src); unfold Regmap.get in RS.
+    erewrite <- RS. eexact H9.
+    2: { eapply match_regular_states; eauto. 
+        eapply rsagree_inv_undef_regs_destroyed; eauto. reflexivity. }
+    eauto.
+
+    (* Mcall *)
+    pose proof H9 as H9'.
+    eapply Genv.find_funct_ptr_match with 
+          (match_fundef:=match_fundef) (match_varinfo:=match_varinfo) in H9.
+    2: { eapply TRANSF. } destruct H9 as [cunit [tf [? [MF]]]].
+    (* inv MF; eexists (Callstate _ _ _ _); split. *)
+    (* eapply exec_Mcall; inv MEM.
+    inv MF. 
+    { erewrite rsagree_inv_find_function_ptr in H8. 2: { eauto. }
+    erewrite find_function_ptr_genv_irrelevent in H8; eauto. symmetry; eapply symbols_preserved. }
+    { }
+    inv MF. eauto. eapply H0.
+    eapply H0. *)
+    admit.
+    (*  *)
+    (* Mtailcall *)
+    admit.
+    (* Mbuiltin *)
+    eexists (State _ _ _ _ _ _); split.
+    eapply exec_Mbuiltin; inv MEM.
+    eapply rsagree_inv_eval_builtin_args with (rs:=rs1) in H8. 2: { eauto. }
+    eapply eval_builtin_args_preserved. eapply symbols_preserved. eauto.
+    eapply extcall_genv_irrelevent; eauto. eapply senv_preserved. eauto.
+    eapply match_regular_states; eauto.
+    eapply rsagree_inv_set_res; eapply rsagree_inv_undef_regs_destroyed; auto. reflexivity.
+
+    (* Mgoto *)
+    
 
 Admitted.
 
