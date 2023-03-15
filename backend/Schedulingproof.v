@@ -354,6 +354,39 @@ Proof.
   apply IHlr; auto.
 Qed.
 
+
+Lemma rsagree_inv_extcall_arg:
+  forall rs rs' m sp l v, 
+      rsagree rs rs' -> extcall_arg rs m sp l v ->
+      extcall_arg rs' m sp l v.
+Proof. 
+  intros. inv H0.
+  - unfold rsagree, Regmap.get in H; rewrite H. eapply extcall_arg_reg.
+  - eapply extcall_arg_stack; eauto.
+Qed.
+
+Lemma rsagree_inv_extcall_arg_pair:
+  forall rs rs' m sp l v, 
+    rsagree rs rs' -> extcall_arg_pair rs m sp l v ->
+    extcall_arg_pair rs' m sp l v.
+Proof.
+  intros. inv H0.
+  - eapply extcall_arg_one. eapply rsagree_inv_extcall_arg; eauto.
+  - eapply extcall_arg_twolong; eapply rsagree_inv_extcall_arg; eauto.
+Qed.
+
+Lemma rsagree_inv_extcall_arguments: 
+  forall args rs rs' m sp sg , 
+    rsagree rs rs' -> extcall_arguments rs m sp sg args ->
+      extcall_arguments rs' m sp sg args.
+Proof. 
+  intros. hnf in *.
+  eapply list_forall2_imply. eapply H0. intros.
+  eapply rsagree_inv_extcall_arg_pair; eauto.
+Qed.
+
+
+
 Inductive match_fundef (p: program): fundef -> fundef -> Prop :=
   | match_fundef_same: forall f, match_fundef p f f  
   | match_fundef_swap_nth: forall n f,
@@ -593,12 +626,26 @@ Section SINGLE_SWAP_CORRECTNESS.
           erewrite <- match_stack_inv_parent_ra; eauto. 
           eapply eventually_now. eapply match_regular_states; eauto.
           simpl; eauto. eapply rsagree_inv_undef_regs_destroyed; eauto.
-          unfold match_mem; auto.
-        }
+          unfold match_mem; auto. }
       (* call external *)
-      + eexists (Returnstate _ _ _). split.
+      + eapply Genv.find_funct_ptr_match with 
+          (match_fundef:=match_fundef) (match_varinfo:=match_varinfo) in H4.
+        2: { eapply TRANSF. }
+        destruct H4 as [cunit [tf [? [MF]]]]. inv MF.
+        eexists (Returnstate _ _ _). split.
         eapply plus_one. eapply exec_function_external; eauto.
-        admit. admit. admit. admit.
+        eapply match_stack_inv_parent_sp in STK. erewrite <- STK; eauto.
+        eapply rsagree_inv_extcall_arguments; eauto.
+        admit. admit.
+        (* eapply eventually_now. eapply match_returnstate; eauto.
+          simpl; eauto. eapply rsagree_inv_undef_regs_destroyed; eauto.
+          unfold match_mem; auto. *)
+(*         
+          erewrite <- match_stack_inv_parent_ra; eauto. 
+          eapply eventually_now. eapply match_regular_states; eauto.
+          simpl; eauto. eapply rsagree_inv_undef_regs_destroyed; eauto.
+          unfold match_mem; auto. *)
+        
     (* Returnstate *)
     - exists 0%nat. inv H. inv STL. inv H1. eexists (State _ _ _ _ _ _ ). split.
       + apply plus_one. eapply exec_return.
