@@ -83,12 +83,15 @@ Section TOPO.
     | _, nil => nil | _, i :: nil => l        (* None: did not swap *)
     | O, i1 :: i2 :: l' => if rel i1 i2 then l
                             else (i2 :: i1 :: l')
-    | Datatypes.S n', i :: l' => try_swap n' l'
+    | Datatypes.S n', i :: l' => i :: try_swap n' l'
     end. 
-
-  Lemma try_swap_rm_head: 
+  
+  Lemma try_swap_later: 
     forall (n:nat) l a, 0 < n -> try_swap n (a :: l) = a :: try_swap (n-1) l.
   Proof. Admitted.
+
+  Lemma try_swap_singleton: forall n x, try_swap n ([x]) = [x].
+  Proof. intros n. induction n; simpl; auto. Qed.
   
   Lemma try_swap_at_tail: forall l, try_swap (length l) l = l.
   Proof.
@@ -100,6 +103,17 @@ Section TOPO.
     induction l. simpl; auto.
     rewrite try_swap_at_tail_aux. rewrite IHl; auto.
   Admitted.
+
+  Lemma try_swap_head_not_change:
+    forall n x l l', try_swap n (x :: l) = x :: l' -> 
+        exists n', try_swap n' l = l'.
+  Proof.
+    intros. destruct n; simpl in H.
+    - destruct l. inv H. exists O; auto. eexists (length (a :: l)). 
+      destruct (rel x a); inv H; eapply try_swap_at_tail.
+    - destruct l. inv H. exists O; auto. inv H. exists n; auto.
+Qed.
+       
 
   Section DECIDE_REL.
     Variable (Rel: A -> A -> Prop).
@@ -339,9 +353,17 @@ Lemma rsagree_inv_swap:
     forall ra va rb vb, ra <> rb ->
       rsagree (rs # ra <- va # rb <- vb) (rs' # rb <- vb # ra <- va).
 Proof.
-  intros; intro. unfold Regmap.get. unfold Regmap.set.
+  intros; intro. unfold Regmap.get, Regmap.set.
   destruct (RegEq.eq r ra); destruct (RegEq.eq r rb); subst; simpl; auto.
   - destruct H0; auto. - apply H. 
+Qed.
+
+Lemma rsagree_inv_update:
+  forall rs rs', rsagree rs rs' -> 
+    forall r v, rsagree (rs # r <- v) (rs' # r <- v).
+Proof. 
+  intros; intro; unfold Regmap.get, Regmap.set.
+  destruct RegEq.eq; auto. eapply H.
 Qed.
 
 Lemma rsagree_inv_undef_regs_destroyed:
@@ -466,7 +488,7 @@ Inductive match_states: state -> state -> Prop :=
       (MEM: match_mem m m'),
       match_states (State sl f sp c rs m)
                    (State sl' f' sp' c' rs' m')
-  | match_callstate:
+  | match_call_state:
       forall sl sl' f f' rs rs' m m'
       (STK: match_stack sl sl')
       (FUNC: f = f')        (** TODO: maybe too tough? can we makesure function pointer values are kept during compilation ?  - though not hard to modify to a looser one *)
@@ -474,7 +496,7 @@ Inductive match_states: state -> state -> Prop :=
       (MEM: match_mem m m'),        (** Memory are no way to be different, since we prevented such swapping *)
       match_states (Callstate sl f rs m)
                    (Callstate sl' f' rs' m')
-  | match_returnstate:
+  | match_return_state:
       forall sl sl' rs rs' m m'
       (STL: match_stack sl sl')
       (RS: rsagree rs rs')        (** TODO: maybe too tough? do we need a looser definition for regset's match? *)
@@ -624,14 +646,26 @@ Section SINGLE_SWAP_CORRECTNESS.
   Admitted.
 
   Lemma same_state_one_step_match:
-  forall stk1 stk1' f f' sp sp' c rs1 rs1' m1 m1'
-  s3 s3' i t t'
-  (s1:= State stk1 f sp (i :: c) rs1 m1) (STEP13: starN step ge 2 s1 t s3)
-  (s1':= State stk1' f' sp' (i :: c) rs1' m1') (MATCH: match_states s1 s1')
-  (STEP13': step ge s1' t' s3'),
-      match_states s3 s3'.
+  forall stk1 stk1' f f' sp sp' c c' rs1 rs1' m1 m1' s2 i t
+  (s1:= State stk1 f sp (i :: c) rs1 m1) (STEP: step ge s1 t s2)
+  (s1':= State stk1' f' sp' (i :: c') rs1' m1') (MATCH: match_states s1 s1'),
+    exists s2', step tge s1' t s2' /\ match_states s2 s2'.
   Proof.
-    intros. Admitted.
+    intros. inv MATCH. inv STEP; eexists (State _ _ _ _ _ _);
+    eapply try_swap_head_not_change in CODE; edestruct CODE; split.
+    (* *)
+    eapply exec_Mlabel. eapply match_regular_states; eauto.
+    (* *)
+    eapply exec_Mgetstack. inv MEM. eapply H8. eapply match_regular_states; eauto.
+    eapply rsagree_inv_update; eauto.
+    (* *)
+    eapply exec_Msetstack. specialize (RS src); unfold Regmap.get in RS. rewrite <- RS.
+    inv MEM. eapply H8. eauto. 
+    eapply match_regular_states; eauto. eapply rsagree_inv_undef_regs_destroyed; eauto. reflexivity.
+    (* *)
+    eapply exec_Mgetparam.
+
+Admitted.
 
   Let tplus:= Plus (semantics return_address_offset tprog).
   Let tEventually:= Eventually (semantics return_address_offset prog).
@@ -642,20 +676,39 @@ Section SINGLE_SWAP_CORRECTNESS.
     exists n s2',
       tplus s2 t s2' /\ tEventually n s1' (fun s1'' => match_states s1'' s2').
   Proof. 
-    intros. inv H0.
+    intros. inv H0; inv MEM.
     (* State *)
     - destruct c as [ | i1]. inv H. destruct c as [|i2 c].
       (* take one step *)
-      exists 0%nat. inv MEM.
-      admit.
-      destruct n0. 
+      { exists 0%nat.
+        edestruct same_state_one_step_match. eapply H. eapply match_regular_states; eauto.
+        eapply try_swap_at_tail. instantiate (1:=m'); unfold match_mem; auto. destruct H0.
+        exists x. split. 
+        eapply plus_one. unfold try_swap_code. erewrite try_swap_singleton. eapply H0.
+        eapply eventually_now; auto. }
       (* safe swap, match after two step *)
-      + simpl. destruct (i1 D~> i2). admit.
-         admit.
-      (* take one step *)
-      + admit.
-    (* Callstate: one-step-match *)
-    - inv MEM.
+      { destruct n0. 
+        (* try-swap now *)
+        + simpl. destruct (i1 D~> i2).
+          (* swap failed, take two independent steps, from previous lemma  *)
+          { exists 0%nat.
+            edestruct same_state_one_step_match. eapply H. eapply match_regular_states; eauto.
+            eapply try_swap_at_tail. instantiate (1:=m'); unfold match_mem; auto. destruct H0.
+            exists x. split. eapply plus_one. unfold try_swap_code. eapply H0.
+            eapply eventually_now; auto.  
+          }
+          (* swap succeeded, take two independent steps, from previous lemma  *)
+          { exists 0%nat. admit. }
+        (* try-swap later, take one step *)
+        + exists 0%nat. simpl in *.
+          edestruct same_state_one_step_match. eapply H. eapply match_regular_states; eauto.
+          instantiate(2:=Datatypes.S n0). simpl. eapply eq_refl. unfold match_mem; auto.
+          destruct H0.
+          exists x. split. eapply plus_one. eapply H0.  
+          eapply eventually_now; auto.  
+      }
+      (* Callstate: one-step-match *)
+    - 
       exists 0%nat. inv H. 
       (* call internal *)
       + eapply Genv.find_funct_ptr_match with 
@@ -686,7 +739,7 @@ Section SINGLE_SWAP_CORRECTNESS.
         eapply rsagree_inv_extcall_arguments; eauto.
         eapply extcall_genv_irrelevent in H8. eapply H8.
         eapply senv_preserved.
-        eapply eventually_now. eapply match_returnstate; eauto. 
+        eapply eventually_now. eapply match_return_state; eauto. 
         eapply rsagree_inv_set_pair; eapply rsagree_inv_undef_caller_save_regs; eauto. 
         hnf; auto.
     (* Returnstate: one-step-match *)
@@ -706,7 +759,7 @@ Section SINGLE_SWAP_CORRECTNESS.
           apply (Genv.init_mem_match TRANSF); trivial. 
           rewrite (match_program_main TRANSF).
           rewrite symbols_preserved; auto. 
-      - apply match_callstate; auto. apply Forall2_nil. 
+      - apply match_call_state; auto. apply Forall2_nil. 
         intro; auto. hnf; auto.
   Qed.
 
