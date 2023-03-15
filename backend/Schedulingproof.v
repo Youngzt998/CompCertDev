@@ -354,7 +354,6 @@ Proof.
   apply IHlr; auto.
 Qed.
 
-
 Lemma rsagree_inv_extcall_arg:
   forall rs rs' m sp l v, 
       rsagree rs rs' -> extcall_arg rs m sp l v ->
@@ -385,6 +384,23 @@ Proof.
   eapply rsagree_inv_extcall_arg_pair; eauto.
 Qed.
 
+Lemma rsagree_inv_undef_caller_save_regs:
+  forall rs rs', rsagree rs rs' ->
+    rsagree (undef_caller_save_regs rs) (undef_caller_save_regs rs').
+Proof.
+  intros; intro. unfold Regmap.get, undef_caller_save_regs.
+  destruct is_callee_save; auto. apply H.
+Qed.
+
+Lemma rsagree_inv_set_pair:
+  forall rs rs' p res, rsagree rs rs' ->
+    rsagree (set_pair p res rs) (set_pair p res rs').
+Proof.
+  intros; intro. unfold Regmap.get. destruct p; simpl.
+  unfold Regmap.set; destruct (RegEq.eq r r0); simpl; eauto.
+  unfold Regmap.set; destruct (RegEq.eq r rlo); destruct (RegEq.eq r rhi); simpl; eauto.
+Qed.
+
 Lemma extcall_genv_irrelevent:
 forall ge1 ge2 ef args m1 t res m2,
 Senv.equiv ge1 ge2 -> 
@@ -394,18 +410,15 @@ Proof.
   intros. destruct ef; simpl in *; eauto.
   - eapply external_functions_properties; eauto.
   (* - eapply external_functions_properties. unfold external_functions_sem. hnf in *)
-  - eapply builtin_or_external_sem_ok; eauto.
-  - eapply builtin_or_external_sem_ok; eauto.
-  - eapply volatile_load_ok; eauto.
-  - eapply volatile_store_ok; eauto.
-  - eapply extcall_malloc_ok; eauto.
-  - eapply extcall_free_ok; eauto.
+  - eapply builtin_or_external_sem_ok; eauto. - eapply builtin_or_external_sem_ok; eauto.
+  - eapply volatile_load_ok; eauto. - eapply volatile_store_ok; eauto.
+  - eapply extcall_malloc_ok; eauto. - eapply extcall_free_ok; eauto.
   - eapply extcall_memcpy_ok; eauto.
-  - eapply extcall_annot_ok; eauto.
-  - eapply extcall_annot_val_ok; eauto.
+  - eapply extcall_annot_ok; eauto. - eapply extcall_annot_val_ok; eauto.
   - eapply inline_assembly_properties; eauto.
   - eapply extcall_debug_ok; eauto.
 Qed. 
+
 
 Inductive match_fundef (p: program): fundef -> fundef -> Prop :=
   | match_fundef_same: forall f, match_fundef p f f  
@@ -626,7 +639,7 @@ Section SINGLE_SWAP_CORRECTNESS.
       (*  *)
       admit.
       admit.
-    (* Callstate *)
+    (* Callstate: one-step-match *)
     - inv MEM.
       exists 0%nat. inv H. 
       (* call internal *)
@@ -658,11 +671,10 @@ Section SINGLE_SWAP_CORRECTNESS.
         eapply rsagree_inv_extcall_arguments; eauto.
         eapply extcall_genv_irrelevent in H8. eapply H8.
         eapply senv_preserved.
-        eapply eventually_now. eapply match_returnstate; eauto.
-        simpl; eauto.
-        admit.
+        eapply eventually_now. eapply match_returnstate; eauto. 
+        eapply rsagree_inv_set_pair; eapply rsagree_inv_undef_caller_save_regs; eauto. 
         hnf; auto.
-    (* Returnstate *)
+    (* Returnstate: one-step-match *)
     - exists 0%nat. inv H. inv STL. inv H1. eexists (State _ _ _ _ _ _ ). split.
       + apply plus_one. eapply exec_return.
       + eapply eventually_now. eapply match_regular_states; eauto. 
