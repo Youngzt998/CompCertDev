@@ -577,23 +577,24 @@ Section SINGLE_SWAP_CORRECTNESS.
     - inv MEM.
       exists 0%nat. inv H. 
       (* call internal *)
-      + eexists (State _ _ _ _ _ _ ). 
-        eapply Genv.find_funct_ptr_match with 
+      + eapply Genv.find_funct_ptr_match with 
           (match_fundef:=match_fundef) (match_varinfo:=match_varinfo) in H4.
         2: { eapply TRANSF. }
-        destruct H4 as [cunit [tf [? [MF]]]]. split. 
-          eapply plus_one. inv MF.
-            { eapply exec_function_internal; eauto. 
-            eapply match_stack_inv_parent_sp in STK. erewrite <- STK; eauto.
-            erewrite <- match_stack_inv_parent_ra; eauto. }
-            { eapply exec_function_internal; eauto. admit. }
-          admit.
-(* 
+        destruct H4 as [cunit [tf [? [MF]]]]. 
+        inv MF; eexists (State _ _ _ _ _ _ ).
+        { split. eapply plus_one. eapply exec_function_internal; eauto. 
+          eapply match_stack_inv_parent_sp in STK. erewrite <- STK; eauto.
+          erewrite <- match_stack_inv_parent_ra; eauto. 
           eapply eventually_now. eapply match_regular_states; eauto.
           eapply try_swap_at_tail. eapply rsagree_inv_undef_regs_destroyed; eauto.
-          unfold match_mem; auto. 
-          Locate destroyed_at_function_entry. Locate undef_regs. *)
-        
+          unfold match_mem; auto. }
+        { split. eapply plus_one. eapply exec_function_internal; eauto. 
+          eapply match_stack_inv_parent_sp in STK. erewrite <- STK; eauto.
+          erewrite <- match_stack_inv_parent_ra; eauto. 
+          eapply eventually_now. eapply match_regular_states; eauto.
+          simpl; eauto. eapply rsagree_inv_undef_regs_destroyed; eauto.
+          unfold match_mem; auto.
+        }
       (* call external *)
       + eexists (Returnstate _ _ _). split.
         eapply plus_one. eapply exec_function_external; eauto.
