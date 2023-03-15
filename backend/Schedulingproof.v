@@ -790,8 +790,25 @@ Section SINGLE_SWAP_CORRECTNESS.
     eapply rsagree_inv_set_res; eapply rsagree_inv_undef_regs_destroyed; auto. reflexivity.
 
     (* Mgoto *)
-    
+    eexists (State _ _ _ _ _ _); split.
+    eapply exec_Mgoto; inv MEM. admit. admit. admit.
 
+    (* Mcond_true *) admit.
+
+    (* Mcond_false *) admit.
+
+    (* Mcond_jumptable *) admit.
+
+    (* Mreturn *)
+    unfold match_mem in MEM; subst. 
+    eapply Genv.find_funct_ptr_match with 
+          (match_fundef:=match_fundef) (match_varinfo:=match_varinfo) in H8.
+    2: { eapply TRANSF. } destruct H8 as [cunit [tf [? [MF]]]]. 
+    inv MF; eauto; eexists (Returnstate _ _ _); split;
+      try eapply exec_Mreturn; eauto;
+      try erewrite <- match_stack_inv_parent_sp; eauto;
+      try erewrite <- match_stack_inv_parent_ra; eauto;
+      try eapply match_return_state; eauto; reflexivity.
 Admitted.
 
   Let tplus:= Plus (semantics return_address_offset tprog).
