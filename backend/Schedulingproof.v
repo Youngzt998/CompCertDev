@@ -344,12 +344,22 @@ Proof.
   - destruct H0; auto. - apply H. 
 Qed.
 
+Lemma rsagree_inv_undef_regs_destroyed:
+  forall lr rs rs', rsagree rs rs' ->
+    rsagree (undef_regs lr rs)
+            (undef_regs lr rs').
+Proof. 
+  intros lr. induction lr; intros; simpl; auto.
+  intro. unfold Regmap.get, Regmap.set. destruct (RegEq.eq r a); simpl; auto.
+  apply IHlr; auto.
+Qed.
+
 Inductive match_fundef (p: program): fundef -> fundef -> Prop :=
-  | match_fundef_same: forall f tf, match_fundef p f tf  
+  | match_fundef_same: forall f, match_fundef p f f  
   | match_fundef_swap_nth: forall n f,
       match_fundef p (Internal f) (Internal (try_swap_nth_func n f)).
 
-Definition match_varinfo_eq: unit -> unit -> Prop := eq.
+Definition match_varinfo: unit -> unit -> Prop := eq.
 
 Inductive match_stackframe: stackframe -> stackframe -> Prop :=
   | match_stackframes_intro:
@@ -371,6 +381,10 @@ Definition match_stack := Forall2 match_stackframe.
 
 Lemma match_stack_inv_parent_sp:
   forall stk stk', match_stack stk stk' -> parent_sp stk = parent_sp stk'.
+Proof. destruct 1; simpl; auto. inv H; auto. Qed. 
+
+Lemma match_stack_inv_parent_ra:
+  forall stk stk', match_stack stk stk' -> parent_ra stk = parent_ra stk'.
 Proof. destruct 1; simpl; auto. inv H; auto. Qed. 
 
 (* try-swap will not swap two inst. one of which contains mem. write *)
@@ -418,10 +432,12 @@ Definition match_prog (funid: ident) (n: nat) (prog tprog: program) :=
   let transf_fun := (fun i f => if ident_eq i funid 
                                 then transf_fundef_try_swap_nth n f else OK f) in
   let transf_var := (fun (i: ident) (v:unit) => OK v) in
-  match_program_gen match_fundef match_varinfo_eq prog prog tprog.
+  match_program_gen match_fundef match_varinfo prog prog tprog.
 
 Lemma transf_program_match:
-forall funid n prog tprog, transf_program_try_swap_nth_in_one funid n prog = OK tprog -> match_prog funid n prog tprog.
+forall funid n prog tprog, 
+  transf_program_try_swap_nth_in_one funid n prog = OK tprog -> 
+    match_prog funid n prog tprog.
 Proof.
     intros. 
     eapply match_transform_partial_program2. eapply H.
@@ -429,7 +445,7 @@ Proof.
     intros. simpl in H0. destruct (ident_eq).
     - destruct f; inv H0.
       apply match_fundef_swap_nth. apply match_fundef_same.
-    - inv H; apply match_fundef_same.
+    - inv H0; apply match_fundef_same.
 Qed.
 
 Section SINGLE_SWAP_CORRECTNESS.
@@ -444,7 +460,7 @@ Section SINGLE_SWAP_CORRECTNESS.
 
   (* Hypothesis TRANSF: match_prog prog tprog. *)
 
-  Hypothesis TRANSF: match_program_gen match_fundef match_varinfo_eq prog prog tprog.
+  Hypothesis TRANSF: match_program_gen match_fundef match_varinfo prog prog tprog.
 
   Let ge := Genv.globalenv prog.
   Let tge := Genv.globalenv tprog.
@@ -552,11 +568,36 @@ Section SINGLE_SWAP_CORRECTNESS.
   Proof. 
     intros. inv H0.
     (* State *)
-    - admit.
+    - remember (length c) as lc.
+      destruct lc; subst.
+      (*  *)
+      admit.
+      admit.
     (* Callstate *)
-    - exists 0%nat. inv H. 
-      + eexists (State _ _ _ _ _ _ ). admit.
-      + eexists (State _ _ _ _ _ _ ). admit.
+    - inv MEM.
+      exists 0%nat. inv H. 
+      (* call internal *)
+      + eexists (State _ _ _ _ _ _ ). 
+        eapply Genv.find_funct_ptr_match with 
+          (match_fundef:=match_fundef) (match_varinfo:=match_varinfo) in H4.
+        2: { eapply TRANSF. }
+        destruct H4 as [cunit [tf [? [MF]]]]. split. 
+          eapply plus_one. inv MF.
+            { eapply exec_function_internal; eauto. 
+            eapply match_stack_inv_parent_sp in STK. erewrite <- STK; eauto.
+            erewrite <- match_stack_inv_parent_ra; eauto. }
+            { eapply exec_function_internal; eauto. admit. }
+          admit.
+(* 
+          eapply eventually_now. eapply match_regular_states; eauto.
+          eapply try_swap_at_tail. eapply rsagree_inv_undef_regs_destroyed; eauto.
+          unfold match_mem; auto. 
+          Locate destroyed_at_function_entry. Locate undef_regs. *)
+        
+      (* call external *)
+      + eexists (Returnstate _ _ _). split.
+        eapply plus_one. eapply exec_function_external; eauto.
+        admit. admit. admit. admit.
     (* Returnstate *)
     - exists 0%nat. inv H. inv STL. inv H1. eexists (State _ _ _ _ _ _ ). split.
       + apply plus_one. eapply exec_return.
