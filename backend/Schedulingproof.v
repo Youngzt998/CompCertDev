@@ -623,6 +623,16 @@ Section SINGLE_SWAP_CORRECTNESS.
       (* Mcond D~> i2: trivial & discriminated*)
   Admitted.
 
+  Lemma same_state_one_step_match:
+  forall stk1 stk1' f f' sp sp' c rs1 rs1' m1 m1'
+  s3 s3' i t t'
+  (s1:= State stk1 f sp (i :: c) rs1 m1) (STEP13: starN step ge 2 s1 t s3)
+  (s1':= State stk1' f' sp' (i :: c) rs1' m1') (MATCH: match_states s1 s1')
+  (STEP13': step ge s1' t' s3'),
+      match_states s3 s3'.
+  Proof.
+    intros. Admitted.
+
   Let tplus:= Plus (semantics return_address_offset tprog).
   Let tEventually:= Eventually (semantics return_address_offset prog).
   
@@ -634,11 +644,16 @@ Section SINGLE_SWAP_CORRECTNESS.
   Proof. 
     intros. inv H0.
     (* State *)
-    - remember (length c) as lc.
-      destruct lc; subst.
-      (*  *)
+    - destruct c as [ | i1]. inv H. destruct c as [|i2 c].
+      (* take one step *)
+      exists 0%nat. inv MEM.
       admit.
-      admit.
+      destruct n0. 
+      (* safe swap, match after two step *)
+      + simpl. destruct (i1 D~> i2). admit.
+         admit.
+      (* take one step *)
+      + admit.
     (* Callstate: one-step-match *)
     - inv MEM.
       exists 0%nat. inv H. 
