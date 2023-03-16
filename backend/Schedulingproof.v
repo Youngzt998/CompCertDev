@@ -9,56 +9,6 @@ Section SMALL_STEP_EXT.
     intros; subst; eauto.
   Qed. 
 
-  Section SIMULATION_BIG_N.
-
-    Variable L1: Smallstep.semantics.
-    Variable L2: Smallstep.semantics.
-    Variable match_states: Smallstep.state L1 -> Smallstep.state L2 -> Prop.
-    
-    Hypothesis public_preserved:
-    forall id, Senv.public_symbol (symbolenv L2) id = Senv.public_symbol (symbolenv L1) id.
-    Hypothesis initial_states:
-      forall s1, Smallstep.initial_state L1 s1 ->
-      exists s2, Smallstep.initial_state L2 s2 /\ match_states s1 s2.
-    Hypothesis final_states:
-      forall s1 s2 r,
-      match_states s1 s2 -> Smallstep.final_state L1 s1 r -> Smallstep.final_state L2 s2 r.
-
-    Let starn1 := starN (step L1) (globalenv L1).
-    Let starn2 := starN (step L2) (globalenv L2).
-    Inductive match_before: nat -> Smallstep.state L1 -> Smallstep.state L2 -> Prop :=
-    | match_before_0: forall s s', match_states s s' -> match_before 0 s s'
-    | match_before_n: 
-        forall s t sn s' n, 
-          match_states s s' -> starn1 n s t sn -> match_before n sn s' 
-    .
-
-    Inductive one_or_n_step_sim (s1 s2: state L1) (s1': state L2) 
-          (MATCH: match_states s1 s1'): Prop :=
-      | one_step_match: forall t,
-          (Step L1 s1 t s2 -> exists s2', Step L2 s1' t s2' /\ match_states s2 s2') ->
-            one_or_n_step_sim s1 s2 s1' MATCH
-      | n_step_match: forall t n,
-          (starn1 n s1 t s2 -> exists s2', starn2 n s1' t s2' /\ match_states s2 s2') ->
-            one_or_n_step_sim s1 s2 s1' MATCH
-      . Check Eventually L1.
-
-    (* Hypothesis big_step_simulation:
-      forall s1, exists t s1',
-
-        (Step L1 s1 t s1' -> ) .
-      
-      
-      t s1', Step L1 s1 t s1' ->
-      forall i s2, match_states i s1 s2 ->
-      exists s1'' i' s2',
-          Star L1 s1' E0 s1''
-      /\ (Plus L2 s2 t s2' \/ (Star L2 s2 t s2' /\ order i' i))
-      /\ match_states i' s1'' s2'. *)
-
-  End SIMULATION_BIG_N.
-
-
 End SMALL_STEP_EXT.
 
 
@@ -90,6 +40,8 @@ Section TOPO.
     forall (n:nat) l a, 0 < n -> try_swap n (a :: l) = a :: try_swap (n-1) l.
   Proof. Admitted.
 
+  Lemma try_swap_nil: forall n, try_swap n [] = [].
+  Proof. intros; destruct n; auto. Qed.
   Lemma try_swap_singleton: forall n x, try_swap n ([x]) = [x].
   Proof. intros n. induction n; simpl; auto. Qed.
   
@@ -125,12 +77,10 @@ Qed.
 End TOPO.
 
 
-
-
 Require Import Errors.
 Open Scope error_monad_scope.
 Import ListNotations.
-Open Scope list_scope. 
+Open Scope list_scope.
 Section SIMULATION_SEQUENCE.
   Definition transf_program_one (transf_def: ident -> fundef -> fundef) :=
       transform_partial_program2 
@@ -158,16 +108,8 @@ Section SIMULATION_SEQUENCE.
     forward_simulation (Mach.semantics return_address_offset prog) 
     (Mach.semantics return_address_offset tprog).
 
-  (* a sequence of correct transformation *)
-  Inductive transf_fundef_list_preserved: list (ident -> fundef -> fundef) -> Prop :=
-    | transf_fundef_list_preserved_nil: 
-        transf_fundef_list_preserved nil
-    | transf_fundef_list_preserved_cons:
-      forall transf_def lfundef,
-        transf_single_fun_fsim_preserve transf_def ->
-        transf_fundef_list_preserved lfundef ->
-        transf_fundef_list_preserved (transf_def :: lfundef)
-  .
+  Definition transf_fundef_list_preserved(lf: list (ident -> fundef -> fundef)): Prop :=
+    Forall transf_single_fun_fsim_preserve lf.
 
   Variable prog: program.
   Variable tprog: program.
@@ -183,7 +125,7 @@ Section SIMULATION_SEQUENCE.
     induction safe_list; intros.
     - inv TRANSF_PROG. apply forward_simulation_refl.
     - inv safe_list. specialize (IHt H3).
-      simpl in TRANSF_PROG. monadInv TRANSF_PROG. rename x into tmprog.
+      simpl in TRANSF_PROG. monadInv TRANSF_PROG. rename x0 into tmprog.
       eapply compose_forward_simulations 
         with (L2:= semantics return_address_offset tmprog); auto.
   Qed.
@@ -298,8 +240,6 @@ Definition try_swap_nth_func (n: nat)(f: function):=
     mkfunction f.(fn_sig) (try_swap_code n f.(fn_code)) 
                f.(fn_stacksize) f.(fn_link_ofs) f.(fn_retaddr_ofs).
 
-
-
 Definition transf_function_try_swap_nth (n: nat) (f: function) : res function :=
     OK (try_swap_nth_func n f).
 
@@ -312,20 +252,20 @@ Definition transf_program_try_swap_nth_in_one (funid: ident) (n: nat) (p: progra
   (fun i f => if ident_eq i funid then transf_fundef_try_swap_nth n f else OK f) 
   (fun i v => OK v) p.
 
-Fixpoint transf_program_try_swap_multi_in_one (funid: ident) (ln: list nat)(p: program): res program :=
+(* Fixpoint transf_program_try_swap_multi_in_one (funid: ident) (ln: list nat)(p: program): res program :=
   match ln with
   | nil => OK p
   | n :: ln' => do p' <- transf_program_try_swap_nth_in_one funid n p;
                 transf_program_try_swap_multi_in_one funid ln' p'
-  end.
+  end. *)
 
-Fixpoint transf_program_try_swap_multi_in_multi (pairs:list (ident * list nat))(p:program): res program:=
+(* Fixpoint transf_program_try_swap_multi_in_multi (pairs:list (ident * list nat))(p:program): res program:=
   match pairs with
   | nil => OK p
   | (funid, ln) :: pairs' => 
     do p' <- transf_program_try_swap_multi_in_one funid ln p;
     transf_program_try_swap_multi_in_multi pairs' p  
-  end.
+  end. *)
 
 (** Extension from Globleenvs.v *)
 (* Section GENV_EXT.
@@ -344,137 +284,139 @@ Fixpoint transf_program_try_swap_multi_in_multi (pairs:list (ident * list nat))(
     End TRANSF_PROGRAM_EXT.
 End GENV_EXT. *)
 
+(* Machting relation between register relations *)
+Section RS_AGREE.
+  Definition rsagree (rs rs': regset) := 
+    forall r:mreg, Regmap.get r rs = Regmap.get r rs'. 
 
-Definition rsagree (rs rs': regset) := 
-  forall r:mreg, Regmap.get r rs = Regmap.get r rs'. 
+  Lemma rsagree_symmetric: symmetric _ rsagree.
+  Proof. hnf; intros; intro; auto. Qed.
 
-Lemma rsagree_symmetric: symmetric _ rsagree.
-Proof. hnf; intros; intro; auto. Qed.
+  Lemma rsagree_inv_swap: 
+    forall rs rs', rsagree rs rs' -> 
+      forall ra va rb vb, ra <> rb ->
+        rsagree (rs # ra <- va # rb <- vb) (rs' # rb <- vb # ra <- va).
+  Proof.
+    intros; intro. unfold Regmap.get, Regmap.set.
+    destruct (RegEq.eq r ra); destruct (RegEq.eq r rb); subst; simpl; auto.
+    - destruct H0; auto. - apply H. 
+  Qed.
 
-Lemma rsagree_inv_swap: 
-  forall rs rs', rsagree rs rs' -> 
-    forall ra va rb vb, ra <> rb ->
-      rsagree (rs # ra <- va # rb <- vb) (rs' # rb <- vb # ra <- va).
-Proof.
-  intros; intro. unfold Regmap.get, Regmap.set.
-  destruct (RegEq.eq r ra); destruct (RegEq.eq r rb); subst; simpl; auto.
-  - destruct H0; auto. - apply H. 
-Qed.
+  Lemma rsagree_inv_update:
+    forall rs rs', rsagree rs rs' -> 
+      forall r v, rsagree (rs # r <- v) (rs' # r <- v).
+  Proof. 
+    intros; intro; unfold Regmap.get, Regmap.set.
+    destruct RegEq.eq; auto. eapply H.
+  Qed.
 
-Lemma rsagree_inv_update:
-  forall rs rs', rsagree rs rs' -> 
-    forall r v, rsagree (rs # r <- v) (rs' # r <- v).
-Proof. 
-  intros; intro; unfold Regmap.get, Regmap.set.
-  destruct RegEq.eq; auto. eapply H.
-Qed.
+  Lemma rsagree_inv_mreg_list:
+    forall lr rs rs', rsagree rs rs' ->
+      rs ## lr = rs' ## lr.
+  Proof. 
+    intros lr. induction lr; simpl; auto; intros. specialize (IHlr _ _ H). 
+    rewrite <- IHlr. assert (rs a = rs' a). apply H. rewrite H0; auto. 
+  Qed.
 
-Lemma rsagree_inv_mreg_list:
-  forall lr rs rs', rsagree rs rs' ->
-    rs ## lr = rs' ## lr.
-Proof. 
-  intros lr. induction lr; simpl; auto; intros. specialize (IHlr _ _ H). 
-  rewrite <- IHlr. assert (rs a = rs' a). apply H. rewrite H0; auto. 
-Qed.
+  Lemma rsagree_inv_undef_regs_destroyed:
+    forall lr rs rs', rsagree rs rs' ->
+      rsagree (undef_regs lr rs)
+              (undef_regs lr rs').
+  Proof. 
+    intros lr. induction lr; intros; simpl; auto.
+    intro. unfold Regmap.get, Regmap.set. destruct (RegEq.eq r a); simpl; auto.
+    apply IHlr; auto.
+  Qed.
 
-Lemma rsagree_inv_undef_regs_destroyed:
-  forall lr rs rs', rsagree rs rs' ->
-    rsagree (undef_regs lr rs)
-            (undef_regs lr rs').
-Proof. 
-  intros lr. induction lr; intros; simpl; auto.
-  intro. unfold Regmap.get, Regmap.set. destruct (RegEq.eq r a); simpl; auto.
-  apply IHlr; auto.
-Qed.
+  Lemma rsagree_inv_extcall_arg:
+    forall rs rs' m sp l v, 
+        rsagree rs rs' -> extcall_arg rs m sp l v ->
+        extcall_arg rs' m sp l v.
+  Proof. 
+    intros. inv H0.
+    - unfold rsagree, Regmap.get in H; rewrite H. eapply extcall_arg_reg.
+    - eapply extcall_arg_stack; eauto.
+  Qed.
 
+  Lemma rsagree_inv_extcall_arg_pair:
+    forall rs rs' m sp l v, 
+      rsagree rs rs' -> extcall_arg_pair rs m sp l v ->
+      extcall_arg_pair rs' m sp l v.
+  Proof.
+    intros. inv H0.
+    - eapply extcall_arg_one. eapply rsagree_inv_extcall_arg; eauto.
+    - eapply extcall_arg_twolong; eapply rsagree_inv_extcall_arg; eauto.
+  Qed.
 
+  Lemma rsagree_inv_extcall_arguments: 
+    forall args rs rs' m sp sg , 
+      rsagree rs rs' -> extcall_arguments rs m sp sg args ->
+        extcall_arguments rs' m sp sg args.
+  Proof. 
+    intros. hnf in *.
+    eapply list_forall2_imply. eapply H0. intros.
+    eapply rsagree_inv_extcall_arg_pair; eauto.
+  Qed.
 
-Lemma rsagree_inv_extcall_arg:
-  forall rs rs' m sp l v, 
-      rsagree rs rs' -> extcall_arg rs m sp l v ->
-      extcall_arg rs' m sp l v.
-Proof. 
-  intros. inv H0.
-  - unfold rsagree, Regmap.get in H; rewrite H. eapply extcall_arg_reg.
-  - eapply extcall_arg_stack; eauto.
-Qed.
+  Lemma rsagree_inv_eval_builtin_arg:
+    forall ge rs rs' sp m arg var,
+    rsagree rs rs' -> eval_builtin_arg ge rs sp m arg var -> 
+      eval_builtin_arg ge rs' sp m arg var.
+  Proof. 
+    intros. unfold rsagree, Regmap.get in H. induction H0; try rewrite H.
+    - apply eval_BA. - apply eval_BA_int. - apply eval_BA_long.
+    - apply eval_BA_float. - apply eval_BA_single.
+    - apply eval_BA_loadstack; auto. - apply eval_BA_addrstack.
+    - apply eval_BA_loadglobal; auto. - apply eval_BA_addrglobal.
+    - apply eval_BA_splitlong; auto. - apply eval_BA_addptr; auto.
+  Qed.
 
-Lemma rsagree_inv_extcall_arg_pair:
-  forall rs rs' m sp l v, 
-    rsagree rs rs' -> extcall_arg_pair rs m sp l v ->
-    extcall_arg_pair rs' m sp l v.
-Proof.
-  intros. inv H0.
-  - eapply extcall_arg_one. eapply rsagree_inv_extcall_arg; eauto.
-  - eapply extcall_arg_twolong; eapply rsagree_inv_extcall_arg; eauto.
-Qed.
+  Lemma rsagree_inv_eval_builtin_args:
+    forall ge rs rs' sp m args vargs,
+    rsagree rs rs' -> eval_builtin_args ge rs sp m args vargs -> 
+      eval_builtin_args ge rs' sp m args vargs.
+  Proof. 
+    intros. hnf in *. Check list_forall2_imply.
+    eapply list_forall2_imply. eapply H0. intros; auto. 
+    eapply rsagree_inv_eval_builtin_arg; eauto.
+  Qed.
 
-Lemma rsagree_inv_extcall_arguments: 
-  forall args rs rs' m sp sg , 
-    rsagree rs rs' -> extcall_arguments rs m sp sg args ->
-      extcall_arguments rs' m sp sg args.
-Proof. 
-  intros. hnf in *.
-  eapply list_forall2_imply. eapply H0. intros.
-  eapply rsagree_inv_extcall_arg_pair; eauto.
-Qed.
+  Lemma rsagree_inv_undef_caller_save_regs:
+    forall rs rs', rsagree rs rs' ->
+      rsagree (undef_caller_save_regs rs) (undef_caller_save_regs rs').
+  Proof.
+    intros; intro. unfold Regmap.get, undef_caller_save_regs.
+    destruct is_callee_save; auto. apply H.
+  Qed.
 
-Lemma rsagree_inv_eval_builtin_arg:
-  forall ge rs rs' sp m arg var,
-  rsagree rs rs' -> eval_builtin_arg ge rs sp m arg var -> 
-    eval_builtin_arg ge rs' sp m arg var.
-Proof. 
-  intros. unfold rsagree, Regmap.get in H. induction H0; try rewrite H.
-  - apply eval_BA. - apply eval_BA_int. - apply eval_BA_long.
-  - apply eval_BA_float. - apply eval_BA_single.
-  - apply eval_BA_loadstack; auto. - apply eval_BA_addrstack.
-  - apply eval_BA_loadglobal; auto. - apply eval_BA_addrglobal.
-  - apply eval_BA_splitlong; auto. - apply eval_BA_addptr; auto.
-Qed.
+  Lemma rsagree_inv_set_pair:
+    forall rs rs' p res, rsagree rs rs' ->
+      rsagree (set_pair p res rs) (set_pair p res rs').
+  Proof.
+    intros; intro. unfold Regmap.get. destruct p; simpl.
+    unfold Regmap.set; destruct (RegEq.eq r r0); simpl; eauto.
+    unfold Regmap.set; destruct (RegEq.eq r rlo); destruct (RegEq.eq r rhi); simpl; eauto.
+  Qed.
 
-Lemma rsagree_inv_eval_builtin_args:
-  forall ge rs rs' sp m args vargs,
-  rsagree rs rs' -> eval_builtin_args ge rs sp m args vargs -> 
-    eval_builtin_args ge rs' sp m args vargs.
-Proof. 
-  intros. hnf in *. Check list_forall2_imply.
-  eapply list_forall2_imply. eapply H0. intros; auto. 
-  eapply rsagree_inv_eval_builtin_arg; eauto.
-Qed.
+  Lemma rsagree_inv_set_res:
+    forall res v rs rs', rsagree rs rs' ->
+      rsagree (set_res res v rs) (set_res res v rs'). 
+  Proof. 
+    intros res. unfold Regmap.get. induction res; simpl; auto; intros.
+    - apply rsagree_inv_update; auto.
+  Qed. 
 
-Lemma rsagree_inv_undef_caller_save_regs:
-  forall rs rs', rsagree rs rs' ->
-    rsagree (undef_caller_save_regs rs) (undef_caller_save_regs rs').
-Proof.
-  intros; intro. unfold Regmap.get, undef_caller_save_regs.
-  destruct is_callee_save; auto. apply H.
-Qed.
-
-Lemma rsagree_inv_set_pair:
-  forall rs rs' p res, rsagree rs rs' ->
-    rsagree (set_pair p res rs) (set_pair p res rs').
-Proof.
-  intros; intro. unfold Regmap.get. destruct p; simpl.
-  unfold Regmap.set; destruct (RegEq.eq r r0); simpl; eauto.
-  unfold Regmap.set; destruct (RegEq.eq r rlo); destruct (RegEq.eq r rhi); simpl; eauto.
-Qed.
-
-Lemma rsagree_inv_set_res:
-  forall res v rs rs', rsagree rs rs' ->
-    rsagree (set_res res v rs) (set_res res v rs'). 
-Proof. 
-  intros res. unfold Regmap.get. induction res; simpl; auto; intros.
-  - apply rsagree_inv_update; auto.
-Qed. 
-
-Lemma rsagree_inv_find_function_ptr:
-  forall ge ros rs rs', rsagree rs rs' ->
-    find_function_ptr ge ros rs = find_function_ptr ge ros rs'.
-Proof. 
-  intros. destruct ros; auto. 
-  simpl. unfold rsagree, Regmap.get in H. rewrite H; auto.
-Qed.
+  Lemma rsagree_inv_find_function_ptr:
+    forall ge ros rs rs', rsagree rs rs' ->
+      find_function_ptr ge ros rs = find_function_ptr ge ros rs'.
+  Proof. 
+    intros. destruct ros; auto. 
+    simpl. unfold rsagree, Regmap.get in H. rewrite H; auto.
+  Qed.
  
+End RS_AGREE.
+
+
 Lemma find_function_ptr_genv_irrelevent:
   forall ge1 ge2 ros rs,
     (forall (s: ident), Genv.find_symbol ge1 s = Genv.find_symbol ge2 s) ->
@@ -532,6 +474,16 @@ Proof. destruct 1; simpl; auto. inv H; auto. Qed.
 Lemma match_stack_inv_parent_ra:
   forall stk stk', match_stack stk stk' -> parent_ra stk = parent_ra stk'.
 Proof. destruct 1; simpl; auto. inv H; auto. Qed. 
+
+Lemma find_label_try_swap:
+  forall lbl c c' n, find_label lbl c = Some c' ->
+    exists n', find_label lbl (try_swap_code n c) = Some (try_swap_code n' c').
+Proof. 
+  intros lbl c. revert lbl. induction c; intros.
+  - exists O. inv H.
+  - simpl in H. destruct (is_label lbl a); inv H.
+    +  
+Admitted.
 
 (* try-swap will not swap two inst. one of which contains mem. write *)
 Definition match_mem (m m': mem) := eq m m'.
@@ -670,8 +622,7 @@ Section SINGLE_SWAP_CORRECTNESS.
         + inv H2; inv H4. 
           eapply match_regular_states; eauto; inv MATCH; eauto.
           eapply try_swap_at_tail. inv MEM.
-          rewrite H12 in H13; inv H13. Print destroyed_by_op. 
-          Print "##".
+          rewrite H12 in H13; inv H13.
           admit. 
         (* Mgetstack D~> Mload  *)
         + inv H2; inv H4. admit.
@@ -729,6 +680,7 @@ Section SINGLE_SWAP_CORRECTNESS.
     eapply exec_Msetstack. specialize (RS src); unfold Regmap.get in RS. rewrite <- RS.
     inv MEM. eapply H8. eauto. 
     eapply match_regular_states; eauto. eapply rsagree_inv_undef_regs_destroyed; eauto. reflexivity.
+    
     (* Mgetparam *)
     eexists (State _ _ _ _ _ _); split.
     eapply exec_Mgetparam; eauto.
@@ -820,29 +772,32 @@ Admitted.
     exists n s2',
       tplus s2 t s2' /\ tEventually n s1' (fun s1'' => match_states s1'' s2').
   Proof. 
-    intros. inv H0; inv MEM.
+    intros. inv H0.
     (* State *)
-    - destruct c as [ | i1]. inv H. destruct c as [|i2 c].
+    -  destruct c as [ | i1]. inv H. destruct c as [|i2 c].
       (* take one step *)
-      { exists 0%nat.
+      { exists 0%nat. inv MEM.
         edestruct same_state_one_step_match. eapply H. eapply match_regular_states; eauto.
         eapply try_swap_at_tail. instantiate (1:=m'); unfold match_mem; auto. destruct H0.
         exists x. split. 
         eapply plus_one. unfold try_swap_code. erewrite try_swap_singleton. eapply H0.
         eapply eventually_now; auto. }
       (* safe swap, match after two step *)
-      { destruct n0. 
+      { destruct n0.
         (* try-swap now *)
-        + simpl. destruct (i1 D~> i2).
+        + simpl. remember (i1 D~> i2) as INDEP. 
+          symmetry in HeqINDEP. destruct INDEP.
           (* swap failed, take two independent steps, from previous lemma  *)
-          { exists 0%nat.
+          { exists 0%nat. inv MEM.
             edestruct same_state_one_step_match. eapply H. eapply match_regular_states; eauto.
             eapply try_swap_at_tail. instantiate (1:=m'); unfold match_mem; auto. destruct H0.
             exists x. split. eapply plus_one. unfold try_swap_code. eapply H0.
             eapply eventually_now; auto.  
           }
           (* swap succeeded, take two independent steps, from previous lemma  *)
-          { exists 0%nat. admit. }
+          { exists 1%nat.
+            admit.
+          }
         (* try-swap later, take one step *)
         + exists 0%nat. simpl in *.
           edestruct same_state_one_step_match. eapply H. eapply match_regular_states; eauto.
@@ -852,8 +807,7 @@ Admitted.
           eapply eventually_now; auto.  
       }
       (* Callstate: one-step-match *)
-    - 
-      exists 0%nat. inv H. 
+    - exists 0%nat. inv MEM. inv H. 
       (* call internal *)
       + eapply Genv.find_funct_ptr_match with 
           (match_fundef:=match_fundef) (match_varinfo:=match_varinfo) in H4.
