@@ -416,7 +416,6 @@ Section RS_AGREE.
  
 End RS_AGREE.
 
-
 Lemma find_function_ptr_genv_irrelevent:
   forall ge1 ge2 ros rs,
     (forall (s: ident), Genv.find_symbol ge1 s = Genv.find_symbol ge2 s) ->
@@ -441,6 +440,20 @@ Proof.
   - eapply extcall_debug_ok; eauto.
 Qed. 
 
+
+Section FIND_LABEL.
+
+Lemma find_label_try_swap:
+  forall lbl c c' n, find_label lbl c = Some c' ->
+    exists n', find_label lbl (try_swap_code n c) = Some (try_swap_code n' c').
+Proof. 
+  intros lbl c. revert lbl. induction c; intros.
+  - exists O. inv H.
+  - simpl in H. destruct (is_label lbl a); inv H.
+    +  
+Admitted.
+
+End FIND_LABEL.
 
 Inductive match_fundef (p: program): fundef -> fundef -> Prop :=
   | match_fundef_same: forall f, match_fundef p f f  
@@ -474,16 +487,6 @@ Proof. destruct 1; simpl; auto. inv H; auto. Qed.
 Lemma match_stack_inv_parent_ra:
   forall stk stk', match_stack stk stk' -> parent_ra stk = parent_ra stk'.
 Proof. destruct 1; simpl; auto. inv H; auto. Qed. 
-
-Lemma find_label_try_swap:
-  forall lbl c c' n, find_label lbl c = Some c' ->
-    exists n', find_label lbl (try_swap_code n c) = Some (try_swap_code n' c').
-Proof. 
-  intros lbl c. revert lbl. induction c; intros.
-  - exists O. inv H.
-  - simpl in H. destruct (is_label lbl a); inv H.
-    +  
-Admitted.
 
 (* try-swap will not swap two inst. one of which contains mem. write *)
 Definition match_mem (m m': mem) := eq m m'.
@@ -551,6 +554,10 @@ Section SINGLE_SWAP_CORRECTNESS.
   Variable prog: program.
   Variable tprog: program.
   Variable return_address_offset: function -> code -> ptrofs -> Prop.
+  Hypothesis return_address_offset_exists:
+    forall f sg ros c,
+    is_tail (Mcall sg ros :: c) (fn_code f) ->
+    exists ofs, return_address_offset f c ofs.
   
   (* only try to swap at one pair inside one function *)
   Variable funid: ident.
@@ -661,11 +668,11 @@ Section SINGLE_SWAP_CORRECTNESS.
       (* Mcond D~> i2: trivial & discriminated*)
   Admitted.
 
-  Lemma same_state_one_step_match:
-  forall stk1 stk1' f f' sp sp' c c' rs1 rs1' m1 m1' s2 i t
-  (s1:= State stk1 f sp (i :: c) rs1 m1) (STEP: step ge s1 t s2)
-  (s1':= State stk1' f' sp' (i :: c') rs1' m1') (MATCH: match_states s1 s1'),
-    exists s2', step tge s1' t s2' /\ match_states s2 s2'.
+  Lemma regular_state_one_step_match:
+    forall stk1 stk1' f f' sp sp' c c' rs1 rs1' m1 m1' s2 i t
+    (s1:= State stk1 f sp (i :: c) rs1 m1) (STEP: step ge s1 t s2)
+    (s1':= State stk1' f' sp' (i :: c') rs1' m1') (MATCH: match_states s1 s1'),
+      exists s2', step tge s1' t s2' /\ match_states s2 s2'.
   Proof.
     intros. inv MATCH. inv STEP; eapply try_swap_head_not_change in CODE; edestruct CODE.
     (* Mlabel *)
@@ -716,20 +723,22 @@ Section SINGLE_SWAP_CORRECTNESS.
     eauto.
 
     (* Mcall *)
+    erewrite find_function_ptr_genv_irrelevent with (ge2:=tge) in H8; eauto.
+    erewrite rsagree_inv_find_function_ptr in H8; eauto. 
     pose proof H9 as H9'.
     eapply Genv.find_funct_ptr_match with 
           (match_fundef:=match_fundef) (match_varinfo:=match_varinfo) in H9.
     2: { eapply TRANSF. } destruct H9 as [cunit [tf [? [MF]]]].
-    (* inv MF; eexists (Callstate _ _ _ _); split. *)
-    (* eapply exec_Mcall; inv MEM.
-    inv MF. 
-    { erewrite rsagree_inv_find_function_ptr in H8. 2: { eauto. }
-    erewrite find_function_ptr_genv_irrelevent in H8; eauto. symmetry; eapply symbols_preserved. }
-    { }
-    inv MF. eauto. eapply H0.
-    eapply H0. *)
-    admit.
-    (*  *)
+    inv MF.
+    {
+      eexists (Callstate _ _ _ _); split. eapply exec_Mcall; eauto.
+      exploit return_address_offset_exists. 
+      2:{ intros. destruct H as [ofs]. admit.   }
+      admit.
+      
+    }
+    { admit. }
+    symmetry; apply symbols_preserved.
     (* Mtailcall *)
     admit.
     (* Mbuiltin *)
@@ -777,7 +786,7 @@ Admitted.
     -  destruct c as [ | i1]. inv H. destruct c as [|i2 c].
       (* take one step *)
       { exists 0%nat. inv MEM.
-        edestruct same_state_one_step_match. eapply H. eapply match_regular_states; eauto.
+        edestruct regular_state_one_step_match. eapply H. eapply match_regular_states; eauto.
         eapply try_swap_at_tail. instantiate (1:=m'); unfold match_mem; auto. destruct H0.
         exists x. split. 
         eapply plus_one. unfold try_swap_code. erewrite try_swap_singleton. eapply H0.
@@ -789,7 +798,7 @@ Admitted.
           symmetry in HeqINDEP. destruct INDEP.
           (* swap failed, take two independent steps, from previous lemma  *)
           { exists 0%nat. inv MEM.
-            edestruct same_state_one_step_match. eapply H. eapply match_regular_states; eauto.
+            edestruct regular_state_one_step_match. eapply H. eapply match_regular_states; eauto.
             eapply try_swap_at_tail. instantiate (1:=m'); unfold match_mem; auto. destruct H0.
             exists x. split. eapply plus_one. unfold try_swap_code. eapply H0.
             eapply eventually_now; auto.  
@@ -800,7 +809,7 @@ Admitted.
           }
         (* try-swap later, take one step *)
         + exists 0%nat. simpl in *.
-          edestruct same_state_one_step_match. eapply H. eapply match_regular_states; eauto.
+          edestruct regular_state_one_step_match. eapply H. eapply match_regular_states; eauto.
           instantiate(2:=Datatypes.S n0). simpl. eapply eq_refl. unfold match_mem; auto.
           destruct H0.
           exists x. split. eapply plus_one. eapply H0.  
@@ -885,6 +894,9 @@ Admitted.
 End SINGLE_SWAP_CORRECTNESS.
 
 
+
+(* Real Instruction Scheduling Correctness *)
+
 Definition transf_function (f: Mach.function) : res Mach.function.
 Admitted.
 
@@ -911,8 +923,8 @@ Section SCHEDULING_CORRECTNESS.
   Hypothesis TRANSF: match_prog_real prog tprog.
 
   Lemma to_sequence_transf (p: program):
-  exists lfd, 
-    transf_program p = transf_program_sequence lfd p.
+    exists lfd, 
+      transf_program p = transf_program_sequence lfd p.
   Proof. 
     unfold match_prog, match_program in TRANSF.
     unfold match_program_gen in TRANSF.
