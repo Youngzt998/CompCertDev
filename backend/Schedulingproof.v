@@ -679,31 +679,29 @@ Section SINGLE_SWAP_CORRECTNESS.
     (* Msetstack *)
     eexists (State _ _ _ _ _ _); split.
     eapply exec_Msetstack. specialize (RS src); unfold Regmap.get in RS. rewrite <- RS.
-    inv MEM. eapply H8. eauto. 
-    intros; eapply match_regular_states; eauto. 
+    inv MEM. eapply H8. eauto. intros; eapply match_regular_states; eauto. 
     eapply rsagree_inv_undef_regs_destroyed; eauto. reflexivity. eapply wf_step; eauto.
     (* Mgetparam *)
-    eexists (State _ _ _ _ _ _); split.
-    eapply exec_Mgetparam; eauto.
-    (* eapply Genv.find_funct_ptr_match with 
+    eapply Genv.find_funct_ptr_match with 
           (match_fundef:=match_fundef) (match_varinfo:=match_varinfo) in H8.
-    2: { eapply TRANSF. }
-    destruct H8 as [p [tf [FF [MF LO]]]]. destruct tf. inv MF. eapply FF.  *)
-    admit. admit. admit. admit.
+    2: { eapply TRANSF. } destruct H8 as [cunit [tf [? [MF]]]].
+    inv MF; eexists (State _ _ _ _ _ _); split. 
+    eapply match_stack_inv_parent_sp in STK. eapply exec_Mgetparam; eauto; erewrite <- STK; inv MEM; eauto.
+    intros. eapply match_regular_states; eauto. repeat eapply rsagree_inv_update; eauto. eapply wf_step; eauto.
+    eapply match_stack_inv_parent_sp in STK. eapply exec_Mgetparam; eauto; erewrite <- STK; inv MEM; eauto.
+    intros. eapply match_regular_states; eauto. repeat eapply rsagree_inv_update; eauto. eapply wf_step; eauto.
     (* Mop *)
     eexists (State _ _ _ _ _ _); split.
     eapply exec_Mop; eauto. erewrite <- rsagree_inv_mreg_list; eauto.
     erewrite <- eval_operation_preserved. inv MEM. eexact H8. 
-    symmetry; eapply symbols_preserved.
-    intros; eapply match_regular_states; eauto. 
+    symmetry; eapply symbols_preserved. intros; eapply match_regular_states; eauto. 
     eapply rsagree_inv_update; eapply rsagree_inv_undef_regs_destroyed; eauto.
     eapply wf_step; eauto.
     (* Mload *)
     eexists (State _ _ _ _ _ _); split.
     eapply exec_Mload; inv MEM; eauto. erewrite rsagree_inv_mreg_list; eauto.
     erewrite eval_addressing_preserved; eauto. eapply symbols_preserved.
-    eapply rsagree_symmetric; auto.
-    intros; eapply match_regular_states; eauto.
+    eapply rsagree_symmetric; auto. intros; eapply match_regular_states; eauto.
     eapply rsagree_inv_update; eapply rsagree_inv_undef_regs_destroyed; eauto.
     eapply wf_step; eauto.
     (* Mstore *)
@@ -715,7 +713,6 @@ Section SINGLE_SWAP_CORRECTNESS.
     2: { intros; eapply match_regular_states; eauto. 
         eapply rsagree_inv_undef_regs_destroyed; eauto. reflexivity. eapply wf_step; eauto. }
     eauto.
-
     (* Mcall *)
     erewrite find_function_ptr_genv_irrelevent with (ge2:=tge) in H8; eauto.
     erewrite rsagree_inv_find_function_ptr in H8; eauto. 
