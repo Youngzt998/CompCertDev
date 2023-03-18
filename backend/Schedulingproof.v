@@ -491,38 +491,36 @@ Proof. destruct 1; simpl; auto. inv H; auto. Qed.
 (* try-swap will not swap two inst. one of which contains mem. write *)
 Definition match_mem (m m': mem) := eq m m'.
 
-Inductive match_states: state -> state -> Prop :=
+Inductive match_states (ge tge: genv): state -> state -> Prop :=
   | match_regular_states: 
       forall sl sl' f f' sp sp' n c c' rs rs' m m'
       (STK: match_stack sl sl')
       (FUNC: f = f') (SP: sp = sp')
       (CODE: try_swap_code n c = c' )
-      (RS: rsagree rs rs') 
-      (MEM: match_mem m m'),
-      match_states (State sl f sp c rs m)
-                   (State sl' f' sp' c' rs' m')
+      (RS: rsagree rs rs') (MEM: match_mem m m')
+      (WF: wf_state ge (State sl f sp c rs m))
+      (WF': wf_state tge (State sl' f' sp' c' rs' m')),
+      match_states ge tge (State sl f sp c rs m)
+                          (State sl' f' sp' c' rs' m')
   | match_call_state:
       forall sl sl' f f' rs rs' m m'
       (STK: match_stack sl sl')
       (FUNC: f = f')        (** TODO: maybe too tough? can we makesure function pointer values are kept during compilation ?  - though not hard to modify to a looser one *)
-      (RS: rsagree rs rs')        (** TODO: maybe too tough? do we need a looser definition for regset's match? *)
-      (MEM: match_mem m m'),        (** Memory are no way to be different, since we prevented such swapping *)
-      match_states (Callstate sl f rs m)
-                   (Callstate sl' f' rs' m')
+      (RS: rsagree rs rs') (MEM: match_mem m m') (** Memory are no way to be different, since we prevented such swapping *)
+      (WF1: wf_state ge (Callstate sl f rs m))
+      (WF2: wf_state tge (Callstate sl' f' rs' m')),
+      match_states ge tge (Callstate sl f rs m)
+                          (Callstate sl' f' rs' m')
   | match_return_state:
       forall sl sl' rs rs' m m'
       (STL: match_stack sl sl')
       (RS: rsagree rs rs')        (** TODO: maybe too tough? do we need a looser definition for regset's match? *)
-      (MEM: match_mem m m'),
-      match_states (Returnstate sl rs m)
-                   (Returnstate sl' rs' m')
+      (MEM: match_mem m m')
+      (WF1: wf_state ge (Returnstate sl rs m))
+      (WF2: wf_state tge (Returnstate sl' rs' m')),
+      match_states ge tge (Returnstate sl rs m)
+                          (Returnstate sl' rs' m')
 .
-
-Definition measure (s: state): nat:=
-  match s with
-  | State sl f sp c rs m => length c
-  | _ => O
-  end.
 
 (** Correctness proof of general correctness of instruction scheduling algorithm*)
 
@@ -570,6 +568,7 @@ Section SINGLE_SWAP_CORRECTNESS.
   Let ge := Genv.globalenv prog.
   Let tge := Genv.globalenv tprog.
   Let step := step return_address_offset.
+  Let match_states := match_states ge tge.
 
   Lemma symbols_preserved:
     forall (s: ident), Genv.find_symbol tge s = Genv.find_symbol ge s.
@@ -579,14 +578,7 @@ Section SINGLE_SWAP_CORRECTNESS.
     Senv.equiv ge tge.
   Proof (Genv.senv_match TRANSF).
 
-  (* Lemma rsagree_inv_eval_op:
-  forall sp op rs rs' args m, rsagree rs rs' ->
-    eval_operation ge sp op rs##args m = eval_operation ge sp op rs'##args m.
-  Proof.
-    intros.   *)
-
-
-  Lemma independ_two_step_match:
+  (* Lemma independ_two_step_match:
       forall stk1 stk1' f f' sp sp' bb rs1 rs1' m1 m1'
       s3 s3' i1 i2 t t'
       (INDEP: happens_before i1 i2 = false)
@@ -666,28 +658,30 @@ Section SINGLE_SWAP_CORRECTNESS.
       (* Mbuiltin D~> i2: trivial & discriminated *)
       (* Mgoto D~> i2: trivial & discriminated *)
       (* Mcond D~> i2: trivial & discriminated*)
-  Admitted.
+  Admitted. *)
 
-  Lemma regular_state_one_step_match:
+  Lemma regular_state_one_step_match_aux:
     forall stk1 stk1' f f' sp sp' c c' rs1 rs1' m1 m1' s2 i t
     (s1:= State stk1 f sp (i :: c) rs1 m1) (STEP: step ge s1 t s2)
     (s1':= State stk1' f' sp' (i :: c') rs1' m1') (MATCH: match_states s1 s1'),
-      exists s2', step tge s1' t s2' /\ match_states s2 s2'.
+      exists s2', step tge s1' t s2' 
+        /\ (step tge s1' t s2' -> match_states s2 s2'). (* note: written in this way only to reduce proof load *)
   Proof.
-    intros. inv MATCH. inv STEP; eapply try_swap_head_not_change in CODE; edestruct CODE.
+    intros. inv MATCH. eapply wf_step in STEP as WF1'. 2: { auto. }
+    inv STEP; eapply try_swap_head_not_change in CODE; edestruct CODE.
     (* Mlabel *)
-    eexists (State _ _ _ _ _ _); split.
-    eapply exec_Mlabel. eapply match_regular_states; eauto.
+    eexists (State _ _ _ _ _ _); split. eapply exec_Mlabel. 
+    intros; eapply match_regular_states; eauto. eapply wf_step; eauto.
     (* Mgetstack *)
-    eexists (State _ _ _ _ _ _); split.
-    eapply exec_Mgetstack. inv MEM. eapply H8. 
-    eapply match_regular_states; eauto. eapply rsagree_inv_update; eauto.
+    eexists (State _ _ _ _ _ _); split. eapply exec_Mgetstack. inv MEM. eapply H8. 
+    intros; eapply match_regular_states; eauto. 
+    eapply rsagree_inv_update; eauto. eapply wf_step; eauto.
     (* Msetstack *)
     eexists (State _ _ _ _ _ _); split.
     eapply exec_Msetstack. specialize (RS src); unfold Regmap.get in RS. rewrite <- RS.
     inv MEM. eapply H8. eauto. 
-    eapply match_regular_states; eauto. eapply rsagree_inv_undef_regs_destroyed; eauto. reflexivity.
-    
+    intros; eapply match_regular_states; eauto. 
+    eapply rsagree_inv_undef_regs_destroyed; eauto. reflexivity. eapply wf_step; eauto.
     (* Mgetparam *)
     eexists (State _ _ _ _ _ _); split.
     eapply exec_Mgetparam; eauto.
@@ -701,25 +695,25 @@ Section SINGLE_SWAP_CORRECTNESS.
     eapply exec_Mop; eauto. erewrite <- rsagree_inv_mreg_list; eauto.
     erewrite <- eval_operation_preserved. inv MEM. eexact H8. 
     symmetry; eapply symbols_preserved.
-    eapply match_regular_states; eauto. 
+    intros; eapply match_regular_states; eauto. 
     eapply rsagree_inv_update; eapply rsagree_inv_undef_regs_destroyed; eauto.
-
+    eapply wf_step; eauto.
     (* Mload *)
     eexists (State _ _ _ _ _ _); split.
     eapply exec_Mload; inv MEM; eauto. erewrite rsagree_inv_mreg_list; eauto.
     erewrite eval_addressing_preserved; eauto. eapply symbols_preserved.
     eapply rsagree_symmetric; auto.
-    eapply match_regular_states; eauto.
+    intros; eapply match_regular_states; eauto.
     eapply rsagree_inv_update; eapply rsagree_inv_undef_regs_destroyed; eauto.
-    
+    eapply wf_step; eauto.
     (* Mstore *)
     eexists (State _ _ _ _ _ _); split.
     eapply exec_Mstore; inv MEM. erewrite rsagree_inv_mreg_list; eauto.
     erewrite eval_addressing_preserved; eauto. eapply symbols_preserved.
     eapply rsagree_symmetric; eauto. specialize (RS src); unfold Regmap.get in RS.
     erewrite <- RS. eexact H9.
-    2: { eapply match_regular_states; eauto. 
-        eapply rsagree_inv_undef_regs_destroyed; eauto. reflexivity. }
+    2: { intros; eapply match_regular_states; eauto. 
+        eapply rsagree_inv_undef_regs_destroyed; eauto. reflexivity. eapply wf_step; eauto. }
     eauto.
 
     (* Mcall *)
@@ -729,16 +723,10 @@ Section SINGLE_SWAP_CORRECTNESS.
     eapply Genv.find_funct_ptr_match with 
           (match_fundef:=match_fundef) (match_varinfo:=match_varinfo) in H9.
     2: { eapply TRANSF. } destruct H9 as [cunit [tf [? [MF]]]].
-    inv MF.
-    {
-      eexists (Callstate _ _ _ _); split. eapply exec_Mcall; eauto.
-      exploit return_address_offset_exists. 
-      2:{ intros. destruct H as [ofs]. admit.   }
-      admit.
-      
-    }
-    { admit. }
-    symmetry; apply symbols_preserved.
+    eexists (Callstate (Stackframe f' sp' (Vptr f' ra) c' :: stk1') f'0 rs1' m1'); split.
+    eapply exec_Mcall; eauto.
+    { unfold tge. erewrite H0. inv MF; eauto. admit. }
+    admit. admit. admit.
     (* Mtailcall *)
     admit.
     (* Mbuiltin *)
@@ -747,8 +735,9 @@ Section SINGLE_SWAP_CORRECTNESS.
     eapply rsagree_inv_eval_builtin_args with (rs:=rs1) in H8. 2: { eauto. }
     eapply eval_builtin_args_preserved. eapply symbols_preserved. eauto.
     eapply extcall_genv_irrelevent; eauto. eapply senv_preserved. eauto.
-    eapply match_regular_states; eauto.
+    intros; eapply match_regular_states; eauto.
     eapply rsagree_inv_set_res; eapply rsagree_inv_undef_regs_destroyed; auto. reflexivity.
+    eapply wf_step; eauto.
 
     (* Mgoto *)
     eexists (State _ _ _ _ _ _); split.
@@ -768,9 +757,18 @@ Section SINGLE_SWAP_CORRECTNESS.
     inv MF; eauto; eexists (Returnstate _ _ _); split;
       try eapply exec_Mreturn; eauto;
       try erewrite <- match_stack_inv_parent_sp; eauto;
-      try erewrite <- match_stack_inv_parent_ra; eauto;
-      try eapply match_return_state; eauto; reflexivity.
+      try erewrite <- match_stack_inv_parent_ra; eauto; intros;
+      try eapply match_return_state; eauto; 
+      try reflexivity; eapply wf_step; eauto.
 Admitted.
+
+  Lemma regular_state_one_step_match:
+  forall stk1 stk1' f f' sp sp' c c' rs1 rs1' m1 m1' s2 i t
+  (s1:= State stk1 f sp (i :: c) rs1 m1) (STEP: step ge s1 t s2)
+  (s1':= State stk1' f' sp' (i :: c') rs1' m1') (MATCH: match_states s1 s1'),
+    exists s2', step tge s1' t s2' 
+      /\ match_states s2 s2'. (* note: written in this way only to reduce proof load *)
+  Proof. intros. edestruct regular_state_one_step_match_aux; eauto. destruct H; eexists x; split; eauto. Qed.
 
   Let tplus:= Plus (semantics return_address_offset tprog).
   Let tEventually:= Eventually (semantics return_address_offset prog).
@@ -781,16 +779,17 @@ Admitted.
     exists n s2',
       tplus s2 t s2' /\ tEventually n s1' (fun s1'' => match_states s1'' s2').
   Proof. 
-    intros. inv H0.
+    intros. inv H0; eapply wf_step in H as WF1'; eauto.  
     (* State *)
     -  destruct c as [ | i1]. inv H. destruct c as [|i2 c].
       (* take one step *)
       { exists 0%nat. inv MEM.
         edestruct regular_state_one_step_match. eapply H. eapply match_regular_states; eauto.
-        eapply try_swap_at_tail. instantiate (1:=m'); unfold match_mem; auto. destruct H0.
+        eapply try_swap_at_tail. instantiate (1:=m'); unfold match_mem; auto. 
+        erewrite <- try_swap_singleton; eauto. 
         exists x. split. 
         eapply plus_one. unfold try_swap_code. erewrite try_swap_singleton. eapply H0.
-        eapply eventually_now; auto. }
+        eapply eventually_now; auto. destruct H0; auto. }
       (* safe swap, match after two step *)
       { destruct n0.
         (* try-swap now *)
@@ -799,7 +798,9 @@ Admitted.
           (* swap failed, take two independent steps, from previous lemma  *)
           { exists 0%nat. inv MEM.
             edestruct regular_state_one_step_match. eapply H. eapply match_regular_states; eauto.
-            eapply try_swap_at_tail. instantiate (1:=m'); unfold match_mem; auto. destruct H0.
+            eapply try_swap_at_tail. instantiate (1:=m'); unfold match_mem; auto.
+            simpl in WF'; rewrite HeqINDEP in WF'; auto. 
+            destruct H0.
             exists x. split. eapply plus_one. unfold try_swap_code. eapply H0.
             eapply eventually_now; auto.  
           }
@@ -810,7 +811,7 @@ Admitted.
         (* try-swap later, take one step *)
         + exists 0%nat. simpl in *.
           edestruct regular_state_one_step_match. eapply H. eapply match_regular_states; eauto.
-          instantiate(2:=Datatypes.S n0). simpl. eapply eq_refl. unfold match_mem; auto.
+          instantiate(1:=Datatypes.S n0). simpl. eapply eq_refl. unfold match_mem; auto.
           destruct H0.
           exists x. split. eapply plus_one. eapply H0.  
           eapply eventually_now; auto.  
@@ -821,20 +822,24 @@ Admitted.
       + eapply Genv.find_funct_ptr_match with 
           (match_fundef:=match_fundef) (match_varinfo:=match_varinfo) in H4.
         2: { eapply TRANSF. }
-        destruct H4 as [cunit [tf [? [MF]]]]. 
+        destruct H4 as [cunit [tf [? [MF]]]].
         inv MF; eexists (State _ _ _ _ _ _ ).
         { split. eapply plus_one. eapply exec_function_internal; eauto. 
           eapply match_stack_inv_parent_sp in STK. erewrite <- STK; eauto.
           erewrite <- match_stack_inv_parent_ra; eauto. 
           eapply eventually_now. eapply match_regular_states; eauto.
           eapply try_swap_at_tail. eapply rsagree_inv_undef_regs_destroyed; eauto.
-          unfold match_mem; auto. }
+          unfold match_mem; auto. eapply wf_step; eauto. eapply exec_function_internal; eauto.
+          eapply match_stack_inv_parent_sp in STK. erewrite <- STK; eauto.
+          erewrite <- match_stack_inv_parent_ra; eauto.    }
         { split. eapply plus_one. eapply exec_function_internal; eauto. 
           eapply match_stack_inv_parent_sp in STK. erewrite <- STK; eauto.
           erewrite <- match_stack_inv_parent_ra; eauto. 
           eapply eventually_now. eapply match_regular_states; eauto.
           simpl; eauto. eapply rsagree_inv_undef_regs_destroyed; eauto.
-          unfold match_mem; auto. }
+          unfold match_mem; auto. eapply wf_step; eauto. eapply exec_function_internal; eauto.
+          eapply match_stack_inv_parent_sp in STK. erewrite <- STK; eauto.
+          erewrite <- match_stack_inv_parent_ra; eauto. }
       (* call external *)
       + eapply Genv.find_funct_ptr_match with 
           (match_fundef:=match_fundef) (match_varinfo:=match_varinfo) in H4.
@@ -848,27 +853,38 @@ Admitted.
         eapply senv_preserved.
         eapply eventually_now. eapply match_return_state; eauto. 
         eapply rsagree_inv_set_pair; eapply rsagree_inv_undef_caller_save_regs; eauto. 
-        hnf; auto.
+        hnf; auto. eapply wf_step; eauto. eapply exec_function_external; eauto.
+        eapply match_stack_inv_parent_sp in STK. erewrite <- STK; eauto.
+        eapply rsagree_inv_extcall_arguments; eauto.
+        eapply extcall_genv_irrelevent in H8. eapply H8.
+        eapply senv_preserved.
     (* Returnstate: one-step-match *)
     - exists 0%nat. inv H. inv STL. inv H1. eexists (State _ _ _ _ _ _ ). split.
       + apply plus_one. eapply exec_return.
-      + eapply eventually_now. eapply match_regular_states; eauto. 
+      + eapply eventually_now. eapply match_regular_states; eauto.
+        eapply wf_step; eauto; eapply exec_return; eauto. 
   Admitted.
 
-  Lemma transf_initial_states:
+  Lemma transf_initial_states_aux:
     forall st1, initial_state prog st1 ->
-    exists st2, initial_state tprog st2 /\ match_states st1 st2.
+    exists st2, initial_state tprog st2 
+      /\ (initial_state tprog st2 -> match_states st1 st2).
   Proof. 
-      intros. inv H.
+      intros. eapply wf_initial in H as ?. inv H.
       exists (Callstate [] fb (Regmap.init Vundef) m0).
       split.
       - apply initial_state_intro.
           apply (Genv.init_mem_match TRANSF); trivial. 
           rewrite (match_program_main TRANSF).
           rewrite symbols_preserved; auto. 
-      - apply match_call_state; auto. apply Forall2_nil. 
-        intro; auto. hnf; auto.
+      - intros. apply match_call_state; auto. apply Forall2_nil. 
+        intro; auto. hnf; auto. eapply wf_initial; auto. 
   Qed.
+
+  Lemma transf_initial_states:
+    forall st1, initial_state prog st1 ->
+    exists st2, initial_state tprog st2 /\ match_states st1 st2.
+  Proof. intros. edestruct transf_initial_states_aux; intros; eauto. destruct H0; eauto. Qed.
 
   Lemma transf_final_states:
     forall st1 st2 r,
