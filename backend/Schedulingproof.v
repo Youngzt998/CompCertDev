@@ -16,7 +16,7 @@ End SMALL_STEP_EXT.
 Require Import Coqlib Maps BoolEqual.
 Require Import AST Integers Values Events Memory Linking Globalenvs Smallstep.
 Require Import Op Locations Conventions Machregs.
-Require Import Mach.
+Require Import Mach Asmgenproof0 Asmgenproof.
 
 Import ListNotations.
 Open Scope list_scope. 
@@ -64,7 +64,7 @@ Section TOPO.
     - destruct l. inv H. exists O; auto. eexists (length (a :: l)). 
       destruct (rel x a); inv H; eapply try_swap_at_tail.
     - destruct l. inv H. exists O; auto. inv H. exists n; auto.
-Qed.
+  Qed.
        
 
   Section DECIDE_REL.
@@ -444,8 +444,8 @@ Qed.
 Section FIND_LABEL.
 
 Lemma find_label_try_swap:
-  forall lbl c c' n, find_label lbl c = Some c' ->
-    exists n', find_label lbl (try_swap_code n c) = Some (try_swap_code n' c').
+  forall lbl c c' n, Mach.find_label lbl c = Some c' ->
+    exists n', Mach.find_label lbl (try_swap_code n c) = Some (try_swap_code n' c').
 Proof. 
   intros lbl c. revert lbl. induction c; intros.
   - exists O. inv H.
@@ -456,25 +456,44 @@ Admitted.
 End FIND_LABEL.
 
 Inductive match_fundef (p: program): fundef -> fundef -> Prop :=
-  | match_fundef_same: forall f, match_fundef p f f  
-  | match_fundef_swap_nth: forall n f,
-      match_fundef p (Internal f) (Internal (try_swap_nth_func n f)).
+  (* | match_fundef_same: forall f, match_fundef p f f *)
+  | match_fundef_internal: forall n f,
+      match_fundef p (Internal f) (Internal (try_swap_nth_func n f))
+  | match_fundef_external: forall f, match_fundef p (External f) (External f)
+  .
+
+Lemma match_fundef_refl: forall p f, match_fundef p f f.
+Proof. 
+  intros. destruct f.
+  - set(n:= length (fn_code f)). 
+    assert (try_swap_nth_func n f = f). {
+      unfold try_swap_nth_func.
+      assert(try_swap_code n (fn_code f) = fn_code f). eapply try_swap_at_tail.
+      rewrite H. destruct f; reflexivity.
+    }
+    exploit match_fundef_internal.
+    instantiate(2:=n). intros. erewrite H in H0. eauto.
+  - eapply match_fundef_external.
+Qed.
 
 Definition match_varinfo: unit -> unit -> Prop := eq.
 
 Inductive match_stackframe: stackframe -> stackframe -> Prop :=
   | match_stackframes_intro:
-      forall f f' sp sp' ra ra' m c c'
+      forall f f' sp sp'  ra ra' m c c'
       (FUNC: f = f') 
-      (SP: sp = sp') (RA: ra = ra') 
+      (SP: sp = sp')  
+      (RA: ra = ra')  (* TODO: what relation should it be *)
       (CODE: try_swap_code m c = c'),
-      match_stackframe (Stackframe f sp ra c)
-                       (Stackframe f' sp' ra' c')
+      match_stackframe (Stackframe f sp (Vptr f ra) c)
+                       (Stackframe f' sp' (Vptr f' ra') c')
 .
 
-Lemma match_stack_refl: forall stk, match_stackframe stk stk.
+Lemma match_stack_refl: forall f sp ra c, 
+  match_stackframe (Stackframe f sp (Vptr f ra) c) 
+                   (Stackframe f sp (Vptr f ra) c).
 Proof. 
-  intros. destruct stk. eapply match_stackframes_intro; auto. 
+  intros. eapply match_stackframes_intro; auto. 
   eapply try_swap_at_tail.
 Qed.
 
@@ -491,35 +510,78 @@ Proof. destruct 1; simpl; auto. inv H; auto. Qed.
 (* try-swap will not swap two inst. one of which contains mem. write *)
 Definition match_mem (m m': mem) := eq m m'.
 
+Section REACHABLE_FROM_INIT.
+  Variable rao: function -> code -> ptrofs -> Prop.
+
+  Inductive reachable (p: program): state -> Prop :=
+    | reachable_initial: forall s, initial_state p s -> reachable p s
+    | reachable_star: forall s1 t s2, 
+        reachable p s1 -> step rao (Genv.globalenv p) s1 t s2 -> reachable p s2 
+  .
+
+  Lemma wf_from_initial: 
+    forall p s, reachable p s -> wf_state (Genv.globalenv p) s.
+  Proof. induction 1. eapply wf_initial; auto. eapply wf_step; eauto. Qed.
+
+  Variable ge: genv.
+  
+  Inductive wf_state_ra: state -> Prop :=
+    | wf_state_ra_state: forall f s fb sp c rs m,
+        Genv.find_funct_ptr ge fb = Some (Internal f) ->
+        load_stack m sp Tptr f.(fn_link_ofs) = Some (parent_sp s) ->
+        load_stack m sp Tptr f.(fn_retaddr_ofs) = Some (parent_ra s) ->
+        wf_state_ra (State s fb sp c rs m)
+    | wf_state_ra_callstate: forall s fb rs m,
+        wf_state_ra (Callstate s fb rs m)
+    | wf_state_ra_returnstate: forall s rs m,
+        wf_state_ra (Returnstate s rs m)
+  .
+
+  (* almost the same as wf_step *)
+  Lemma wf_ra_step:
+  forall S1 t S2, step rao ge S1 t S2 -> wf_state_ra S1 -> wf_state_ra S2.
+  Proof.
+    induction 1; intros WF; inv WF; try (econstructor; now eauto with coqlib).
+    - (* setstack *) 
+      eapply wf_state_ra_state; eauto.
+      Abort.
+
+End REACHABLE_FROM_INIT.
+
+
 Inductive match_states (ge tge: genv): state -> state -> Prop :=
-  | match_regular_states: 
-      forall sl sl' f f' sp sp' n c c' rs rs' m m'
-      (STK: match_stack sl sl')
-      (FUNC: f = f') (SP: sp = sp')
-      (CODE: try_swap_code n c = c' )
-      (RS: rsagree rs rs') (MEM: match_mem m m')
-      (WF: wf_state ge (State sl f sp c rs m))
-      (WF': wf_state tge (State sl' f' sp' c' rs' m')),
-      match_states ge tge (State sl f sp c rs m)
-                          (State sl' f' sp' c' rs' m')
-  | match_call_state:
-      forall sl sl' f f' rs rs' m m'
-      (STK: match_stack sl sl')
-      (FUNC: f = f')        (** TODO: maybe too tough? can we makesure function pointer values are kept during compilation ?  - though not hard to modify to a looser one *)
-      (RS: rsagree rs rs') (MEM: match_mem m m') (** Memory are no way to be different, since we prevented such swapping *)
-      (WF1: wf_state ge (Callstate sl f rs m))
-      (WF2: wf_state tge (Callstate sl' f' rs' m')),
-      match_states ge tge (Callstate sl f rs m)
-                          (Callstate sl' f' rs' m')
-  | match_return_state:
-      forall sl sl' rs rs' m m'
-      (STL: match_stack sl sl')
-      (RS: rsagree rs rs')        (** TODO: maybe too tough? do we need a looser definition for regset's match? *)
-      (MEM: match_mem m m')
-      (WF1: wf_state ge (Returnstate sl rs m))
-      (WF2: wf_state tge (Returnstate sl' rs' m')),
-      match_states ge tge (Returnstate sl rs m)
-                          (Returnstate sl' rs' m')
+| match_regular_states: 
+    forall sl sl' fb fb' sp sp' n c c' rs rs' m m'
+    (STK: match_stack sl sl')
+    (FUNC: fb = fb') (SP: sp = sp')
+    (CODE: try_swap_code n c = c' )
+    (RS: rsagree rs rs') (MEM: match_mem m m')
+    (* (LDSTK: forall f f', Genv.find_funct_ptr ge fb = Some (Internal f) ->
+            Genv.find_funct_ptr tge fb = Some (Internal f') ->
+            load_stack m sp Tptr f.(fn_retaddr_ofs) = Some (parent_ra sl) <->
+            load_stack m' sp Tptr f'.(fn_retaddr_ofs) = Some (parent_ra sl') ) *)
+    (WF: wf_state ge (State sl fb sp c rs m))
+    (WF': wf_state tge (State sl' fb' sp' c' rs' m')),
+    match_states ge tge (State sl fb sp c rs m)
+                        (State sl' fb' sp' c' rs' m')
+| match_call_state:
+    forall sl sl' f f' rs rs' m m'
+    (STK: match_stack sl sl')
+    (FUNC: f = f')        (** TODO: maybe too tough? can we makesure function pointer values are kept during compilation ?  - though not hard to modify to a looser one *)
+    (RS: rsagree rs rs') (MEM: match_mem m m') (** Memory are no way to be different, since we prevented such swapping *)
+    (WF1: wf_state ge (Callstate sl f rs m))
+    (WF2: wf_state tge (Callstate sl' f' rs' m')),
+    match_states ge tge (Callstate sl f rs m)
+                        (Callstate sl' f' rs' m')
+| match_return_state:
+    forall sl sl' rs rs' m m'
+    (STL: match_stack sl sl')
+    (RS: rsagree rs rs')        (** TODO: maybe too tough? do we need a looser definition for regset's match? *)
+    (MEM: match_mem m m')
+    (WF1: wf_state ge (Returnstate sl rs m))
+    (WF2: wf_state tge (Returnstate sl' rs' m')),
+    match_states ge tge (Returnstate sl rs m)
+                        (Returnstate sl' rs' m')
 .
 
 (** Correctness proof of general correctness of instruction scheduling algorithm*)
@@ -528,9 +590,9 @@ Inductive match_states (ge tge: genv): state -> state -> Prop :=
 
 
 Definition match_prog (funid: ident) (n: nat) (prog tprog: program) :=
-  let transf_fun := (fun i f => if ident_eq i funid 
+  (* let transf_fun := (fun i f => if ident_eq i funid 
                                 then transf_fundef_try_swap_nth n f else OK f) in
-  let transf_var := (fun (i: ident) (v:unit) => OK v) in
+  let transf_var := (fun (i: ident) (v:unit) => OK v) in *)
   match_program_gen match_fundef match_varinfo prog prog tprog.
 
 Lemma transf_program_match:
@@ -543,23 +605,37 @@ Proof.
     2: { intros. simpl in H0. inv H0; apply eq_refl. }
     intros. simpl in H0. destruct (ident_eq).
     - destruct f; inv H0.
-      apply match_fundef_swap_nth. apply match_fundef_same.
-    - inv H0; apply match_fundef_same.
+      apply match_fundef_internal. apply match_fundef_external.
+    - inv H0; apply match_fundef_refl.
 Qed.
+
+
+Definition return_address_offset := Asmgenproof0.return_address_offset.
+Remark return_address_offset_exists:
+  forall f sg ros c, is_tail (Mcall sg ros :: c) (fn_code f) ->
+    exists ofs, return_address_offset f c ofs.
+Proof. intros; eapply Asmgenproof.return_address_exists; eauto. Qed.
+Print Ptrofs.int.
+
+Require Import Integers.
+Lemma return_address_offset_unique: forall f c b tc ofs,
+  return_address_offset f c ofs  -> 
+    Asmgen.transl_code f c b = OK tc ->
+    Z.to_nat (Ptrofs.intval ofs) = length (tc). Abort.
 
 Section SINGLE_SWAP_CORRECTNESS.
 
   Variable prog: program.
   Variable tprog: program.
-  Variable return_address_offset: function -> code -> ptrofs -> Prop.
+  
+  (* Variable return_address_offset: function -> code -> ptrofs -> Prop.
   Hypothesis return_address_offset_exists:
-    forall f sg ros c,
-    is_tail (Mcall sg ros :: c) (fn_code f) ->
-    exists ofs, return_address_offset f c ofs.
+    forall f sg ros c, is_tail (Mcall sg ros :: c) (fn_code f) ->
+      exists ofs, return_address_offset f c ofs. *)
   
   (* only try to swap at one pair inside one function *)
-  Variable funid: ident.
-  Variable n: nat.
+  (* Variable funid: ident. *)
+  (* Variable n: nat. *)
 
   (* Hypothesis TRANSF: match_prog prog tprog. *)
 
@@ -567,7 +643,41 @@ Section SINGLE_SWAP_CORRECTNESS.
 
   Let ge := Genv.globalenv prog.
   Let tge := Genv.globalenv tprog.
-  Let step := step return_address_offset.
+
+
+  Definition rao_n' (rao: function -> code -> ptrofs -> Prop) (f: function) (c: code): ptrofs -> Prop :=
+    fun ptr => 
+       forall f' c', (exists n, try_swap_nth_func n f = f') ->
+        (exists m, try_swap_code m c = c') -> rao f' c' ptr.
+
+  (* Lemma is_tail_preserved_by_swap:
+    forall sg ros c f n, is_tail (Mcall sg ros :: c) (fn_code f) ->
+      exists m, is_tail (Mcall sg ros :: try_swap_code m c) (fn_code (try_swap_nth_func n f))
+       (* /\ TODO *).
+  Proof.
+    intros sg ros c f n. intros. inv H. 
+    - exists ((n-1)%nat). remember (fn_code f) as fc. destruct (fn_code f). inv H2. inv H. inv H2.
+    induction H.  Admitted. *)
+
+  Let rao_n := rao_n' return_address_offset.
+
+  Lemma rao_n_exists:
+    forall f sg ros c, is_tail (Mcall sg ros :: c) (fn_code f) ->
+      exists ofs, rao_n f c ofs.
+  Proof.
+    intros.
+    (* exploit is_tail_preserved_by_swap; eauto; intros [m]. 
+    clear H; exploit return_address_offset_exists; eauto; intros [ofs].
+    exists ofs. unfold rao_n, rao_n'. intros. destruct H1 as [n']. instantiate (0:= n'). 
+    eexists _. intros.
+    
+    exploit return_address_offset_exists; eauto. intros [ofs].
+    exists ofs.  intros. inv H1; auto. *)
+  Abort.
+
+  Let step' := step return_address_offset. (* target semantics *)
+  Let step := step rao_n. (* source semantics *)
+
   Let match_states := match_states ge tge.
 
   Lemma symbols_preserved:
@@ -577,6 +687,14 @@ Section SINGLE_SWAP_CORRECTNESS.
   Lemma senv_preserved:
     Senv.equiv ge tge.
   Proof (Genv.senv_match TRANSF).
+
+  (* Lemma return_address_same: 
+    forall f1 f2, length f1.(fn_code) = length f2.(fn_code) ->
+      forall c1 c2 ofs1 ofs2, return_address_offset f1 c1 ofs1 ->
+        return_address_offset f2 c2 ofs2 -> ofs1 = ofs2.
+  Proof. unfold return_address_offset, Asmgenproof0.return_address_offset. intros.
+    destruct (Asmgen.transf_function f1).   Check Asmgen.transl_code. 
+  Abort. *)
 
   (* Lemma independ_two_step_match:
       forall stk1 stk1' f f' sp sp' bb rs1 rs1' m1 m1'
@@ -660,34 +778,35 @@ Section SINGLE_SWAP_CORRECTNESS.
       (* Mcond D~> i2: trivial & discriminated*)
   Admitted. *)
 
+  Require Import Classical.
   Lemma regular_state_one_step_match_aux:
-    forall stk1 stk1' f f' sp sp' c c' rs1 rs1' m1 m1' s2 i t
-    (s1:= State stk1 f sp (i :: c) rs1 m1) (STEP: step ge s1 t s2)
-    (s1':= State stk1' f' sp' (i :: c') rs1' m1') (MATCH: match_states s1 s1'),
-      exists s2', step tge s1' t s2' 
-        /\ (step tge s1' t s2' -> match_states s2 s2'). (* note: written in this way only to reduce proof load *)
+  forall stk1 stk1' fb fb' sp sp' c c' rs1 rs1' m1 m1' s2 i t
+  (s1:= State stk1 fb sp (i :: c) rs1 m1) (STEP: step ge s1 t s2)
+  (s1':= State stk1' fb' sp' (i :: c') rs1' m1') 
+  (MATCH: match_states s1 s1'),
+    exists s2', step' tge s1' t s2' 
+        /\ (step' tge s1' t s2' -> match_states s2 s2'). (* note: written in this way only to reduce proof load *)
   Proof.
-    intros. inv MATCH. eapply wf_step in STEP as WF1'. 2: { auto. }
-    inv STEP; eapply try_swap_head_not_change in CODE; edestruct CODE.
+    intros. inv MATCH. eapply wf_step in STEP as WF1; auto.
+    inv STEP; eapply try_swap_head_not_change in CODE; destruct CODE as [n'].
     (* Mlabel *)
-    eexists (State _ _ _ _ _ _); split. eapply exec_Mlabel. 
+    eexists (State _ _ _ _ _ _); split. eapply exec_Mlabel.
     intros; eapply match_regular_states; eauto. eapply wf_step; eauto.
     (* Mgetstack *)
-    eexists (State _ _ _ _ _ _); split. eapply exec_Mgetstack. inv MEM. eapply H8. 
-    intros; eapply match_regular_states; eauto. 
+    eexists (State _ _ _ _ _ _); split. eapply exec_Mgetstack. inv MEM. eapply H8.
+    intros; eapply match_regular_states; eauto.
     eapply rsagree_inv_update; eauto. eapply wf_step; eauto.
     (* Msetstack *)
     eexists (State _ _ _ _ _ _); split.
     eapply exec_Msetstack. specialize (RS src); unfold Regmap.get in RS. rewrite <- RS.
-    inv MEM. eapply H8. eauto. intros; eapply match_regular_states; eauto. 
-    eapply rsagree_inv_undef_regs_destroyed; eauto. reflexivity. eapply wf_step; eauto.
+    inv MEM. eapply H8. eauto. intros; eapply match_regular_states; eauto.
+    eapply rsagree_inv_undef_regs_destroyed; eauto. reflexivity.
+    eapply wf_step; eauto.
     (* Mgetparam *)
     eapply Genv.find_funct_ptr_match with 
           (match_fundef:=match_fundef) (match_varinfo:=match_varinfo) in H8.
     2: { eapply TRANSF. } destruct H8 as [cunit [tf [? [MF]]]].
-    inv MF; eexists (State _ _ _ _ _ _); split. 
-    eapply match_stack_inv_parent_sp in STK. eapply exec_Mgetparam; eauto; erewrite <- STK; inv MEM; eauto.
-    intros. eapply match_regular_states; eauto. repeat eapply rsagree_inv_update; eauto. eapply wf_step; eauto.
+    inv MF; eexists (State _ _ _ _ _ _); split.
     eapply match_stack_inv_parent_sp in STK. eapply exec_Mgetparam; eauto; erewrite <- STK; inv MEM; eauto.
     intros. eapply match_regular_states; eauto. repeat eapply rsagree_inv_update; eauto. eapply wf_step; eauto.
     (* Mop *)
@@ -711,21 +830,38 @@ Section SINGLE_SWAP_CORRECTNESS.
     eapply rsagree_symmetric; eauto. specialize (RS src); unfold Regmap.get in RS.
     erewrite <- RS. eexact H9.
     2: { intros; eapply match_regular_states; eauto. 
-        eapply rsagree_inv_undef_regs_destroyed; eauto. reflexivity. eapply wf_step; eauto. }
+    eapply rsagree_inv_undef_regs_destroyed; eauto. reflexivity. eapply wf_step; eauto. }
     eauto.
     (* Mcall *)
     erewrite find_function_ptr_genv_irrelevent with (ge2:=tge) in H8; eauto.
-    erewrite rsagree_inv_find_function_ptr in H8; eauto. 
+    2: { symmetry; eapply symbols_preserved. }
+    erewrite rsagree_inv_find_function_ptr in H8; eauto.
     pose proof H9 as H9'.
     eapply Genv.find_funct_ptr_match with 
           (match_fundef:=match_fundef) (match_varinfo:=match_varinfo) in H9.
     2: { eapply TRANSF. } destruct H9 as [cunit [tf [? [MF]]]].
-    eexists (Callstate (Stackframe f' sp' (Vptr f' ra) c' :: stk1') f'0 rs1' m1'); split.
-    eapply exec_Mcall; eauto.
-    { unfold tge. erewrite H0. inv MF; eauto. admit. }
-    admit. admit. admit.
+    assert (wf' := WF').
+    inv WF'. fold tge in H0; erewrite CODE in H0; inv H0. eauto.
+    exploit return_address_offset_exists; eauto; intros [ra'].
+    inv MF; eexists (Callstate _ _ _ _); split.
+    eapply exec_Mcall with (ra:=ra'); eauto. intros; eapply match_call_state; eauto. 
+      eapply Forall2_cons; eauto. eapply match_stackframes_intro; eauto.
+      admit. (* TODO: an unavoidable hard reasoning *)
+      eapply wf_step; eauto.
+
     (* Mtailcall *)
-    admit.
+    erewrite find_function_ptr_genv_irrelevent with (ge2:=tge) in H8; eauto.
+    2: { symmetry; eapply symbols_preserved. }
+    erewrite rsagree_inv_find_function_ptr in H8; eauto.
+    pose proof H9 as H9'.
+    eapply Genv.find_funct_ptr_match with 
+          (match_fundef:=match_fundef) (match_varinfo:=match_varinfo) in H9.
+    2: { eapply TRANSF. } destruct H9 as [cunit [tf [? [MF]]]].
+    inv MEM. inv MF; eexists (Callstate _ _ _ _); split.
+    eapply exec_Mtailcall; simpl; eauto. 
+    eapply match_stack_inv_parent_sp in STK; erewrite <- STK; eauto.
+    eapply match_stack_inv_parent_ra in STK; erewrite <- STK; eauto.
+    intros. eapply match_call_state; eauto. reflexivity. eapply wf_step; eauto.
     (* Mbuiltin *)
     eexists (State _ _ _ _ _ _); split.
     eapply exec_Mbuiltin; inv MEM.
@@ -746,25 +882,24 @@ Section SINGLE_SWAP_CORRECTNESS.
 
     (* Mcond_jumptable *) admit.
 
-    (* Mreturn *)
-    unfold match_mem in MEM; subst. 
+    (* Mreturn *) 
     eapply Genv.find_funct_ptr_match with 
           (match_fundef:=match_fundef) (match_varinfo:=match_varinfo) in H8.
-    2: { eapply TRANSF. } destruct H8 as [cunit [tf [? [MF]]]]. 
-    inv MF; eauto; eexists (Returnstate _ _ _); split;
-      try eapply exec_Mreturn; eauto;
-      try erewrite <- match_stack_inv_parent_sp; eauto;
-      try erewrite <- match_stack_inv_parent_ra; eauto; intros;
-      try eapply match_return_state; eauto; 
-      try reflexivity; eapply wf_step; eauto.
+    2: { eapply TRANSF. } destruct H8 as [cunit [tf [? [MF]]]]. inv MEM.
+
+    inv MF; eauto; eexists (Returnstate stk1' _ _); split.
+      eapply exec_Mreturn; eauto.
+      erewrite <- match_stack_inv_parent_sp; eauto.
+      erewrite <- match_stack_inv_parent_ra; eauto.
+      intros; eapply match_return_state; eauto. reflexivity. eapply wf_step; eauto.
 Admitted.
 
   Lemma regular_state_one_step_match:
   forall stk1 stk1' f f' sp sp' c c' rs1 rs1' m1 m1' s2 i t
   (s1:= State stk1 f sp (i :: c) rs1 m1) (STEP: step ge s1 t s2)
   (s1':= State stk1' f' sp' (i :: c') rs1' m1') (MATCH: match_states s1 s1'),
-    exists s2', step tge s1' t s2' 
-      /\ match_states s2 s2'. (* note: written in this way only to reduce proof load *)
+    exists s2', step' tge s1' t s2' 
+      /\ match_states s2 s2'.
   Proof. intros. edestruct regular_state_one_step_match_aux; eauto. destruct H; eexists x; split; eauto. Qed.
 
   Let tplus:= Plus (semantics return_address_offset tprog).
@@ -823,7 +958,7 @@ Admitted.
         inv MF; eexists (State _ _ _ _ _ _ ).
         { split. eapply plus_one. eapply exec_function_internal; eauto. 
           eapply match_stack_inv_parent_sp in STK. erewrite <- STK; eauto.
-          erewrite <- match_stack_inv_parent_ra; eauto. 
+          (* erewrite <- match_stack_inv_parent_ra; eauto.  *) admit.
           eapply eventually_now. eapply match_regular_states; eauto.
           eapply try_swap_at_tail. eapply rsagree_inv_undef_regs_destroyed; eauto.
           unfold match_mem; auto. eapply wf_step; eauto. eapply exec_function_internal; eauto.
