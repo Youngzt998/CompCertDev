@@ -903,7 +903,7 @@ Admitted.
   Proof. intros. edestruct regular_state_one_step_match_aux; eauto. destruct H; eexists x; split; eauto. Qed.
 
   Let tplus:= Plus (semantics return_address_offset tprog).
-  Let tEventually:= Eventually (semantics return_address_offset prog).
+  Let tEventually:= Eventually (semantics rao_n prog).
   
   Lemma simulation:
   forall s1 t s1', step ge s1 t s1' ->
@@ -923,7 +923,7 @@ Admitted.
         eapply plus_one. unfold try_swap_code. erewrite try_swap_singleton. eapply H0.
         eapply eventually_now; auto. destruct H0; auto. }
       (* safe swap, match after two step *)
-      { destruct n0.
+      { destruct n.
         (* try-swap now *)
         + simpl. remember (i1 D~> i2) as INDEP. 
           symmetry in HeqINDEP. destruct INDEP.
@@ -943,7 +943,7 @@ Admitted.
         (* try-swap later, take one step *)
         + exists 0%nat. simpl in *.
           edestruct regular_state_one_step_match. eapply H. eapply match_regular_states; eauto.
-          instantiate(1:=Datatypes.S n0). simpl. eapply eq_refl. unfold match_mem; auto.
+          instantiate(1:=Datatypes.S n). simpl. eapply eq_refl. unfold match_mem; auto.
           destruct H0.
           exists x. split. eapply plus_one. eapply H0.  
           eapply eventually_now; auto.  
@@ -956,14 +956,14 @@ Admitted.
         2: { eapply TRANSF. }
         destruct H4 as [cunit [tf [? [MF]]]].
         inv MF; eexists (State _ _ _ _ _ _ ).
-        { split. eapply plus_one. eapply exec_function_internal; eauto. 
+        (* { split. eapply plus_one. eapply exec_function_internal; eauto. 
           eapply match_stack_inv_parent_sp in STK. erewrite <- STK; eauto.
-          (* erewrite <- match_stack_inv_parent_ra; eauto.  *) admit.
+          erewrite <- match_stack_inv_parent_ra; eauto.
           eapply eventually_now. eapply match_regular_states; eauto.
           eapply try_swap_at_tail. eapply rsagree_inv_undef_regs_destroyed; eauto.
           unfold match_mem; auto. eapply wf_step; eauto. eapply exec_function_internal; eauto.
           eapply match_stack_inv_parent_sp in STK. erewrite <- STK; eauto.
-          erewrite <- match_stack_inv_parent_ra; eauto.    }
+          erewrite <- match_stack_inv_parent_ra; eauto.    } *)
         { split. eapply plus_one. eapply exec_function_internal; eauto. 
           eapply match_stack_inv_parent_sp in STK. erewrite <- STK; eauto.
           erewrite <- match_stack_inv_parent_ra; eauto. 
@@ -1029,7 +1029,7 @@ Admitted.
   Qed.
   
   Theorem forward_simulation_transformed:
-  forward_simulation (Mach.semantics return_address_offset prog) 
+  forward_simulation (Mach.semantics rao_n prog) 
                      (Mach.semantics return_address_offset tprog).
   Proof.
     eapply forward_simulation_eventually_plus.
