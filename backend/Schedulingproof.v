@@ -923,8 +923,15 @@ Section SINGLE_SWAP_CORRECTNESS.
     eexists (State _ _ _ _ _ _); split. eapply exec_Mcond_false; eauto.
     inv MEM. erewrite <- rsagree_inv_mreg_list; eauto.
     intros. eapply match_regular_states; eauto. eapply wf_step; eauto.
-    (* Mcond_jumptable *) admit.
-
+    (* Mcond_jumptable *)
+    eapply Genv.find_funct_ptr_match with 
+          (match_fundef:=match_fundef) (match_varinfo:=match_varinfo) in H10.
+    2: { eapply TRANSF. } destruct H10 as [cunit [tf [? [MF]]]].
+    inv MF. pose proof (find_label_try_swap lbl (fn_code f)) c'0 n1 H11. destruct H as [nn].
+    eexists (State _ _ _ _ _ _); split. eapply exec_Mjumptable; eauto.
+    rewrite <- H8; symmetry; apply RS.
+    intros. eapply match_regular_states; eauto. eapply rsagree_inv_undef_regs_destroyed; eauto.
+    eapply wf_step; eauto.
     (* Mreturn *) 
     eapply Genv.find_funct_ptr_match with 
           (match_fundef:=match_fundef) (match_varinfo:=match_varinfo) in H8.
