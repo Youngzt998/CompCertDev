@@ -413,7 +413,13 @@ Section RS_AGREE.
     intros. destruct ros; auto. 
     simpl. unfold rsagree, Regmap.get in H. rewrite H; auto.
   Qed.
- 
+
+
+  (* Lemma rsagree_inv_eval_condition: 
+    forall cond args m rs rs', rsagree rs rs' ->
+      eval_condition cond rs ## args m = eval_condition cond rs' ## args m.
+  Proof. intros. Locate "##". Check eval_condition. Print map. Locate map. *)
+
 End RS_AGREE.
 
 Lemma find_function_ptr_genv_irrelevent:
@@ -900,20 +906,23 @@ Section SINGLE_SWAP_CORRECTNESS.
     eapply Genv.find_funct_ptr_match with 
           (match_fundef:=match_fundef) (match_varinfo:=match_varinfo) in H8.
     2: { eapply TRANSF. } destruct H8 as [cunit [tf [? [MF]]]].
-    inv MF.
-    pose proof (find_label_try_swap lbl (fn_code f)) c'0 n0 H9. 
-    destruct H as [nn]. eexists (State _ _ _ _ _ _); split. eapply exec_Mgoto; eauto.
+    inv MF. pose proof (find_label_try_swap lbl (fn_code f)) c'0 n0 H9. destruct H as [nn].
+    eexists (State _ _ _ _ _ _); split. eapply exec_Mgoto; eauto.
     intros. eapply match_regular_states; eauto. eapply wf_step; eauto.
 
     (* Mcond_true *)
     eapply Genv.find_funct_ptr_match with 
           (match_fundef:=match_fundef) (match_varinfo:=match_varinfo) in H9.
-    2: { eapply TRANSF. } destruct H8 as [cunit [tf [? [MF]]]].
-    
-    admit.
+    2: { eapply TRANSF. } destruct H9 as [cunit [tf [? [MF]]]].
+    inv MF. pose proof (find_label_try_swap lbl (fn_code f)) c'0 n0 H10. destruct H as [nn].
+    eexists (State _ _ _ _ _ _); split. eapply exec_Mcond_true; eauto.
+    inv MEM. erewrite <- rsagree_inv_mreg_list; eauto.
+    intros. eapply match_regular_states; eauto. eapply wf_step; eauto.
 
-    (* Mcond_false *) admit.
-
+    (* Mcond_false *)
+    eexists (State _ _ _ _ _ _); split. eapply exec_Mcond_false; eauto.
+    inv MEM. erewrite <- rsagree_inv_mreg_list; eauto.
+    intros. eapply match_regular_states; eauto. eapply wf_step; eauto.
     (* Mcond_jumptable *) admit.
 
     (* Mreturn *) 
