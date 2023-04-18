@@ -443,15 +443,39 @@ Qed.
 
 Section FIND_LABEL.
 
+Lemma is_label_inv: forall lbl a, is_label lbl a = true -> a =  Mlabel lbl.
+Proof. 
+  intros. destruct a; simpl in H; inv H. destruct (peq lbl l). 
+  rewrite e; auto. discriminate H1. 
+Qed.
+
 Lemma find_label_try_swap:
   forall lbl c c' n, Mach.find_label lbl c = Some c' ->
     exists n', Mach.find_label lbl (try_swap_code n c) = Some (try_swap_code n' c').
-Proof. 
+Proof.
   intros lbl c. revert lbl. induction c; intros.
   - exists O. inv H.
-  - simpl in H. destruct (is_label lbl a); inv H.
-    +  
-Admitted.
+  - simpl in H. remember (is_label lbl a) as b. destruct b.
+    + inv H. destruct c'; destruct n; simpl; try rewrite <- Heqb.
+      * exists O; auto. * exists O; auto.
+      * symmetry in Heqb; eapply is_label_inv in Heqb. subst.
+        unfold happens_before; simpl. destruct (peq lbl lbl). exists (length (i :: c')). 
+        unfold try_swap_code; erewrite try_swap_at_tail; auto. exfalso; auto.
+      * exists n; auto.
+    + destruct c. simpl in H; inv H.
+      destruct n; simpl; try rewrite <- Heqb.
+      * remember (a D~> i) as b. destruct b.
+        { simpl. rewrite <- Heqb. simpl in H. rewrite H. 
+          exists (length c'). unfold try_swap_code; erewrite try_swap_at_tail; auto. } 
+        { assert(is_label lbl i = false). 
+            remember (is_label lbl i) as b. destruct b; auto. symmetry in Heqb1.
+            eapply is_label_inv in Heqb1; subst.
+            unfold happens_before in Heqb0; destruct (solid_inst a); auto.  
+          simpl; simpl in H. rewrite H0 in *. rewrite <- Heqb.
+          rewrite H. exists (length c').
+          unfold try_swap_code; erewrite try_swap_at_tail; auto. }
+      * eapply IHc in H as [n']. exists n'; eauto.
+Qed.
 
 End FIND_LABEL.
 
@@ -873,10 +897,20 @@ Section SINGLE_SWAP_CORRECTNESS.
     eapply wf_step; eauto.
 
     (* Mgoto *)
-    eexists (State _ _ _ _ _ _); split.
-    eapply exec_Mgoto; inv MEM. admit. admit. admit.
+    eapply Genv.find_funct_ptr_match with 
+          (match_fundef:=match_fundef) (match_varinfo:=match_varinfo) in H8.
+    2: { eapply TRANSF. } destruct H8 as [cunit [tf [? [MF]]]].
+    inv MF.
+    pose proof (find_label_try_swap lbl (fn_code f)) c'0 n0 H9. 
+    destruct H as [nn]. eexists (State _ _ _ _ _ _); split. eapply exec_Mgoto; eauto.
+    intros. eapply match_regular_states; eauto. eapply wf_step; eauto.
 
-    (* Mcond_true *) admit.
+    (* Mcond_true *)
+    eapply Genv.find_funct_ptr_match with 
+          (match_fundef:=match_fundef) (match_varinfo:=match_varinfo) in H9.
+    2: { eapply TRANSF. } destruct H8 as [cunit [tf [? [MF]]]].
+    
+    admit.
 
     (* Mcond_false *) admit.
 
