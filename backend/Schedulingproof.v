@@ -250,6 +250,46 @@ Section LOCSET_AGREE.
   Proof. hnf; intros; intro; auto. Qed.
 
 
+  Lemma lsagree_getpair: 
+    forall ls ls' pr, lsagree ls ls' -> Locmap.getpair pr ls = Locmap.getpair pr ls'.
+  Proof. 
+    intros. destruct pr; simpl. apply H. 
+    hnf in H; unfold Locmap.get in H. repeat rewrite H; auto.
+  Qed.
+
+  Lemma lsagree_undef_caller_save_regs: forall rs rs', lsagree rs rs' -> 
+    lsagree (LTL.undef_caller_save_regs rs) (LTL.undef_caller_save_regs rs').
+  Proof. 
+    intros; intro. unfold Locmap.get, LTL.undef_caller_save_regs.
+    destruct r. destruct (is_callee_save r); auto. apply H. destruct sl; auto; eapply H.
+  Qed. 
+
+  Lemma lsagree_setpair:
+    forall p v rs rs', lsagree rs rs' ->
+      lsagree (Locmap.setpair p v rs) (Locmap.setpair p v rs').
+  Proof. 
+    intros; intro. unfold Locmap.get, Locmap.setpair. 
+    destruct p; auto; unfold Locmap.set; auto.
+    - destruct (Loc.eq (R r0) r); auto. destruct (Loc.diff_dec (R r0) r); auto. apply H.
+    - destruct (Loc.eq (R rlo) r); auto. destruct (Loc.diff_dec (R rlo) r); auto.
+    destruct (Loc.eq (R rhi) r); auto. destruct (Loc.diff_dec (R rhi) r); auto. apply H.
+  Qed.
+
+  Lemma lsagree_call_regs: forall rs rs',
+    lsagree rs rs' -> lsagree (LTL.call_regs rs) (LTL.call_regs rs').
+  Proof. 
+    intros. intro. destruct r; unfold Locmap.get, LTL.call_regs; simpl.
+    - eapply H. - destruct sl; auto. eapply H. 
+  Qed.
+
+  Lemma lsagree_undef_regs: forall rs rs' rl,
+    lsagree rs rs' -> lsagree (LTL.undef_regs rl rs) (LTL.undef_regs rl rs').
+  Proof.
+    intros; intro. induction rl; auto. simpl.
+    unfold Locmap.get, Locmap.set. destruct (Loc.eq (R a) r); auto.
+    destruct (Loc.diff_dec (R a) r); auto.
+  Qed.
+
 
 End LOCSET_AGREE.
 
@@ -416,6 +456,7 @@ Qed. *)
 Definition match_stack := Forall2 match_stackframe.
 
 Definition match_mem (m m': mem) := eq m m'.
+Ltac mem_eq := apply eq_refl.
 
 
 Inductive match_states: state -> state -> Prop :=
@@ -480,20 +521,60 @@ Section SINGLE_SWAP_CORRECTNESS.
   Hypothesis TRANSF: match_program_gen match_fundef match_varinfo prog prog tprog.
 
   Let ge := Genv.globalenv prog.
-  Let tge := Genv.globalenv tprog.
+  Let tge := Genv.globalenv tprog. 
 
   Lemma symbols_preserved:
   forall (s: ident), Genv.find_symbol tge s = Genv.find_symbol ge s.
-  Proof (Genv.find_symbol_match TRANSF). 
+  Proof (Genv.find_symbol_match TRANSF).
 
   Lemma senv_preserved:
     Senv.equiv ge tge.
   Proof (Genv.senv_match TRANSF).
 
+  Definition next_is_extern (s: state): bool :=
+    match s with
+    | State _ _ _ (Lbuiltin _ _ _ :: _) _ _ => true
+    | Callstate _  (External _) _ _ => true
+    | _ => false
+    end
+    .
+    
+  Lemma determ_no_extern: 
+    forall p, let ge := Genv.globalenv p in
+    forall s ta sa tb sb, next_is_extern s = false -> 
+      step ge s ta sa -> step ge s tb sb ->
+        ta = tb /\ sa = sb.
+  Proof.
+    intros. exploit Linear_determ; eauto. intros.
+    destruct H2. simpl in sd_determ. specialize (sd_determ _ _  _ _ _ H0 H1).
+    destruct sd_determ as []. inv H2. split; auto.
+    inv H0; simpl in H; inv H. inv H0; simpl in H; inv H.
+    inv H0; simpl in H; inv H. inv H0; simpl in H; inv H.
+  Qed.
+  
+  Lemma sd_step_silent: forall ge s t s', step ge s t s' -> next_is_extern s = false -> t = E0.
+  Proof. intros; inv H; auto; simpl in H0; discriminate H0. Qed.
+
+  Print starN.
+  (* strictly determinate steps *)
+  Inductive starN_sd (ge: Genv.t fundef unit): nat -> state -> trace -> state -> Prop :=
+    | starN_sd_refl: forall s: state, starN_sd ge 0 s E0 s
+    | starN_sd_step: 
+        forall n s t1 s' t2 s'',
+          next_is_extern s = false ->
+          step ge s t1 s' -> starN_sd ge n s' t2 s'' ->
+          starN_sd ge (Datatypes.S n) s' (t1**t2) s''
+  .
+
+  Lemma sd_star_silent: forall ge n s t s', starN_sd n ge s t s' -> t = E0.
+  Proof. intros. induction H; auto; subst. eapply sd_step_silent in H; eauto. erewrite E0_right; eauto. Qed.
+
+
 
   Lemma regular_state_one_step_match:
   forall stk1 stk1' fb fb' sp sp' c c' rs1 rs1' m1 m1' s2 i t
-  (s1:= State stk1 fb sp (i :: c) rs1 m1) (STEP: step ge s1 t s2)
+  (s1:= State stk1 fb sp (i :: c) rs1 m1) 
+  (STEP: step ge s1 t s2)
   (s1':= State stk1' fb' sp' (i :: c') rs1' m1') 
   (MATCH: match_states s1 s1'),
     exists s2', step tge s1' t s2' 
@@ -511,6 +592,78 @@ Section SINGLE_SWAP_CORRECTNESS.
       exists s3',
       starN step ge 2 s1' t' s3' /\ match_states s3 s3'.
   Proof. Admitted.
+
+
+
+  Lemma small_big_step_simulation:
+    forall s1 t s2 s1', step ge s1 t s2 -> match_states s1 s1' ->
+    (exists s2', step tge s1' t s2' /\ match_states s2 s2' ) 
+    \/ 
+    (exists tt s3 s3', starN step ge 2 s1 tt s3 
+      /\ starN step tge 2 s1' tt s3' /\ match_states s3 s3').
+  Proof. 
+    intros. inv H0.
+    (* State *)
+    - admit.
+    (* Callstate: one step matching *)
+    - left. inv MEM. inv H.
+      (* call internal *)
+      + inv FUNC. eexists (State _ _ _ _ _ _). split.
+        eapply exec_function_internal; eauto.
+        eapply match_regular_states; eauto. simpl. eapply eq_refl.
+        eapply lsagree_undef_regs, lsagree_call_regs; auto. mem_eq.
+      (* call external *)
+      + inv FUNC. eexists (Returnstate _ _ _). split.
+        eapply exec_function_external; eauto.
+        eapply extcall_genv_irrelevent in H7.
+        assert( forall l, map (fun p => Locmap.getpair p rs) l = map (fun p=> Locmap.getpair p rs') l).
+        { induction l; auto. simpl. erewrite lsagree_getpair; eauto. erewrite IHl; eauto. }
+        erewrite H in H7. eauto. eapply senv_preserved.
+        eapply match_return_state; eauto. eapply lsagree_setpair. 
+        eapply lsagree_undef_caller_save_regs; auto. mem_eq.
+    (* Returnstate: one step matching*)
+    - left.
+      
+
+
+  Admitted.
+
+
+  
+
+  Inductive match_states_aux: state -> state -> Prop :=
+    | match_now : forall s s', match_states s s' -> match_states_aux s s'
+    | match_next: 
+        forall sa sa' t sb sb',
+          next_is_extern sa = false -> next_is_extern sb = false ->
+          step ge sa t sb -> step tge sa' t sb' -> match_states sb sb' -> 
+            match_states_aux sa sa'
+    .
+
+  Lemma simulation:
+    forall s1 t s2 s1', step ge s1 t s2 -> match_states_aux s1 s1' ->
+        exists s2', step tge s1' t s2' /\ match_states_aux s2 s2'. 
+  Proof.
+    intros. inv H0.
+    - assert (H':= H). eapply small_big_step_simulation in H; eauto. destruct H.
+      + destruct H as [x []]. eexists x; split; eauto. eapply match_now; auto.
+      + destruct H as [tt [s3 [s3' [? [? ?]]]]].
+      destruct H as [ ]. eexact x. eauto.
+      exploit H; eauto. intros. destruct H0 as [x []].
+      exists x; split; auto. eapply match_now; eauto.
+      (*  *)
+      exploit determ_no_extern. eexact H1. eexact H'. eexact H3. 
+      intros; destruct H0; subst.
+      exists sb'. split; eauto. eapply match_now; eauto.
+    -(* two step match *)
+      inv H0.
+      (* match next *)
+      admit.
+      (* match now *)
+      exploit determ_no_extern. eexact H1. eexact H'. eexact H3.
+      intros; destruct H0; subst.
+      exists sb'. split; eauto. eapply match_now; eauto.
+  Admitted.
 
 
   Lemma transf_initial_states:
@@ -539,8 +692,20 @@ Section SINGLE_SWAP_CORRECTNESS.
     match_states st1 st2 -> final_state st1 r -> final_state st2 r.
   Proof. 
     intros. inv H0. inv H. inv STL.
-    eapply final_state_intro.
-  Admitted.
+    eapply final_state_intro. 
+    erewrite <- lsagree_getpair; eauto.
+  Qed.
 
-  
+  Theorem forward_simulation_safe_swap:
+  forward_simulation (Linear.semantics prog) 
+                     (Linear.semantics tprog).
+  Proof.
+    eapply forward_simulation_eventually_plus.
+    - apply senv_preserved.
+    - apply transf_initial_states.
+    - apply transf_final_states.
+    - apply simulation.
+  Qed.
+
+
 End SINGLE_SWAP_CORRECTNESS.
