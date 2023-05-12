@@ -460,7 +460,7 @@ Ltac mem_eq := apply eq_refl.
 
 
 Inductive match_states: state -> state -> Prop :=
-| match_regular_states: 
+| match_regular_state: 
     forall sl sl' n_f f f' sp sp' n_c c c' rs rs' m m'
     (STK: match_stack sl sl')
     (FUNC: try_swap_nth_func n_f f = f')
@@ -604,13 +604,39 @@ Section SINGLE_SWAP_CORRECTNESS.
   Proof. 
     intros. inv H0.
     (* State *)
-    - admit.
+    - destruct c as [ | i1]. inv H. destruct c as [|i2 c].
+      (* take one step *)
+      { left. edestruct regular_state_one_step_match. 
+        eapply H. eapply match_regular_state; eauto.
+        eapply try_swap_at_tail. 
+        erewrite <- try_swap_singleton in H0; eauto. }
+      (* may be a swapping *)
+      destruct n_c.
+      (* try swapping now *)
+      {
+        simpl. remember (i1 D~> i2) as INDEP. 
+        symmetry in HeqINDEP. destruct INDEP.
+        (* swap failed, take one step *)
+        { left. edestruct regular_state_one_step_match. eapply H. 
+        eapply match_regular_state; eauto.
+        eapply try_swap_at_tail.
+        exists x; eauto. }
+        (* swap succeeded, take two steps, from previous lemma  *)
+        {
+          admit.
+        }
+      }
+      (* try swapping later, take one step and match *)
+      { left. simpl. edestruct regular_state_one_step_match. 
+        eapply H. eapply match_regular_state; eauto.
+        instantiate(2:=Datatypes.S n_c). simpl. eapply eq_refl. eauto.
+      }
     (* Callstate: one step matching *)
     - left. inv MEM. inv H.
       (* call internal *)
       + inv FUNC. eexists (State _ _ _ _ _ _). split.
         eapply exec_function_internal; eauto.
-        eapply match_regular_states; eauto. simpl. eapply eq_refl.
+        eapply match_regular_state; eauto. simpl. eapply eq_refl.
         eapply lsagree_undef_regs, lsagree_call_regs; auto. mem_eq.
       (* call external *)
       + inv FUNC. eexists (Returnstate _ _ _). split.
@@ -622,10 +648,9 @@ Section SINGLE_SWAP_CORRECTNESS.
         eapply match_return_state; eauto. eapply lsagree_setpair. 
         eapply lsagree_undef_caller_save_regs; auto. mem_eq.
     (* Returnstate: one step matching*)
-    - left.
-      
-
-
+    - left. inv MEM. inv H. inv STL. inv H1.
+      eexists (State _ _ _ _ _ _); split.
+      eapply exec_return. eapply match_regular_state; eauto. mem_eq.
   Admitted.
 
 
