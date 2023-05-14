@@ -577,8 +577,7 @@ Section SINGLE_SWAP_CORRECTNESS.
   (STEP: step ge s1 t s2)
   (s1':= State stk1' fb' sp' (i :: c') rs1' m1') 
   (MATCH: match_states s1 s1'),
-    exists s2', step tge s1' t s2' 
-        /\ match_states s2 s2'. (* note: written in this way only to reduce proof load *)
+    exists s2', step tge s1' t s2' /\ match_states s2 s2'.
   Proof. Admitted.
 
 
@@ -589,19 +588,23 @@ Section SINGLE_SWAP_CORRECTNESS.
       (STEP13: starN step ge 2 s1 t s3)
       (s1':= State stk1' f' sp' (i2::i1::bb) rs1' m1')
       (MAT: match_states s1 s1'),
-      exists s3',
-      starN step ge 2 s1' t' s3' /\ match_states s3 s3'.
-  Proof. Admitted.
+      exists s3', starN step ge 2 s1' t' s3' /\ match_states s3 s3'.
+  Proof.
 
 
 
+  Admitted.
+
+
+
+  (* High likely Failed *)
   Lemma small_big_step_simulation:
     forall s1 t s2 s1', step ge s1 t s2 -> match_states s1 s1' ->
     (exists s2', step tge s1' t s2' /\ match_states s2 s2' ) 
     \/ 
-    (exists tt s3 s3', starN step ge 2 s1 tt s3 
-      /\ starN step tge 2 s1' tt s3' /\ match_states s3 s3').
-  Proof. 
+    (forall tt s3 , starN step ge 2 s1 tt s3 ->
+      exists s3', starN step tge 2 s1' tt s3' /\ match_states s3 s3').
+  Proof.
     intros. inv H0.
     (* State *)
     - destruct c as [ | i1]. inv H. destruct c as [|i2 c].
@@ -623,6 +626,7 @@ Section SINGLE_SWAP_CORRECTNESS.
         exists x; eauto. }
         (* swap succeeded, take two steps, from previous lemma  *)
         {
+          right.
           admit.
         }
       }
@@ -653,10 +657,60 @@ Section SINGLE_SWAP_CORRECTNESS.
       eapply exec_return. eapply match_regular_state; eauto. mem_eq.
   Admitted.
 
+  (*
+       sa ~~~~~~~> sb
+        |         /
+        |       /
+  match |     / aux. match
+        |   /
+        | /
+        sa'
+  *)
 
-  
+  Definition next_exec (s: state): option instruction :=
+    match s with
+    | State _ _ _ (Lreturn :: _) _ _ => None
+    | State _ _ _ (i :: _) _ _ => Some i
+    | _ => None
+    end.
 
-  Inductive match_states_aux: state -> state -> Prop :=
+  Definition index := bool.
+  Inductive orderb: bool -> bool -> Prop :=
+    | orderb_neq: orderb true false
+    .
+
+  Lemma wf_orderb: well_founded orderb.
+  Proof.
+    hnf. Locate well_founded.
+    intros. eapply Acc_intro.
+    intros. induction H. eapply Acc_intro.
+    intros. inv H.
+  Qed.
+
+  Inductive match_states_aux: index -> state -> state -> Prop :=
+  | match_now : forall s s', match_states s s' -> match_states_aux false s s'
+  | match_next: 
+      forall sa i sa' t sb,
+        (* next_is_extern sa = false -> next_is_extern sb = false -> *)
+        next_exec sa = Some i ->
+        step ge sa t sb -> match_states sa sa' -> 
+          match_states_aux true sb sa'
+  .
+
+  Let tPlus := Plus (semantics tprog).
+  Let tStar := Star (semantics tprog). 
+  Lemma simulation:
+    forall s1 t s2, step ge s1 t s2 -> 
+      forall b s1', match_states_aux b s1 s1' ->
+        exists b', exists s2', 
+          (tPlus s1' t s2' \/ (tStar s1' t s2' /\ orderb b' b) ) 
+        /\ match_states_aux b' s2 s2'. 
+  Proof.
+
+  Admitted.
+
+
+  (* Inductive match_states_aux: state -> state -> Prop :=
     | match_now : forall s s', match_states s s' -> match_states_aux s s'
     | match_next: 
         forall sa sa' t sb sb',
@@ -688,31 +742,31 @@ Section SINGLE_SWAP_CORRECTNESS.
       exploit determ_no_extern. eexact H1. eexact H'. eexact H3.
       intros; destruct H0; subst.
       exists sb'. split; eauto. eapply match_now; eauto.
-  Admitted.
+  Admitted. *)
 
 
   Lemma transf_initial_states:
     forall st1, initial_state prog st1 ->
-    exists st2, initial_state tprog st2 /\ match_states st1 st2.
+    exists b st2, initial_state tprog st2 /\ match_states_aux b st1 st2.
   Proof.
     intros. inv H.
     eapply (Genv.find_funct_ptr_match TRANSF) in H2; eauto.
     destruct H2 as [cu [tf [? []]]]. inv H2.
-    - exists (Callstate [] (Internal ((try_swap_nth_func n f0))) (Locmap.init Vundef) m0).
+    - exists false, (Callstate [] (Internal ((try_swap_nth_func n f0))) (Locmap.init Vundef) m0).
       split. eapply initial_state_intro; eauto.
       eapply (Genv.init_mem_match TRANSF); trivial. 
       rewrite (match_program_main TRANSF); rewrite symbols_preserved; auto.
-      eapply match_call_state; eauto. eapply Forall2_nil.
+      eapply match_now, match_call_state; eauto. eapply Forall2_nil.
       eapply match_fundef0_internal. eapply lsagree_refl. reflexivity.
-    - exists (Callstate [] (External f0)  (Locmap.init Vundef) m0).
+    - exists false, (Callstate [] (External f0)  (Locmap.init Vundef) m0).
       split. eapply initial_state_intro; eauto.
       eapply (Genv.init_mem_match TRANSF); trivial. 
       rewrite (match_program_main TRANSF); rewrite symbols_preserved; auto.
-      eapply match_call_state; eauto. eapply Forall2_nil.
+      eapply match_now, match_call_state; eauto. eapply Forall2_nil.
       eapply match_fundef0_external. eapply lsagree_refl. reflexivity.
   Qed.
 
-  Lemma transf_final_states:
+  Lemma transf_final_states0:
     forall st1 st2 r,
     match_states st1 st2 -> final_state st1 r -> final_state st2 r.
   Proof. 
@@ -721,7 +775,55 @@ Section SINGLE_SWAP_CORRECTNESS.
     erewrite <- lsagree_getpair; eauto.
   Qed.
 
+
+
+  Lemma transf_final_states:
+    forall b st1 st2 r,
+    match_states_aux b st1 st2 -> final_state st1 r -> final_state st2 r.
+  Proof.
+    intros. inv H.
+    - (* match now *) eapply transf_final_states0; eauto.
+    - (* match before, not possible *)
+      inv H0. inv H2; simpl in H1; discriminate H1.
+  Qed.
+
   Theorem forward_simulation_safe_swap:
+    forward_simulation (Linear.semantics prog) 
+                       (Linear.semantics tprog).
+  Proof.
+    eapply Forward_simulation with orderb match_states_aux; constructor.
+    - apply wf_orderb.
+    - apply transf_initial_states.
+    - apply transf_final_states.
+    - apply simulation.
+    - apply senv_preserved.
+  Qed.
+
+  (* Warning: dangerous way 
+      since it may not be general to other kinds of passes 
+     It works in this project only because we use 
+        a very strict matching (same mem./stack/reg. states) relation
+      *)
+  (* Lemma transf_final_states1:
+    forall st1 st2 r,
+    match_states st1 st2 -> final_state st2 r -> final_state st1 r.
+  Proof. 
+    intros. inv H0. inv H. inv STL.
+    eapply final_state_intro. 
+    erewrite <- lsagree_getpair; eauto.
+    eapply lsagree_symmetric; eauto.
+  Qed. *)
+
+  (* Lemma transf_final_states:
+    forall st1 st2 r,
+    match_states st1 st2 -> final_state st1 r -> final_state st2 r.
+  Proof. 
+    intros. inv H0. inv H. inv STL.
+    eapply final_state_intro. 
+    erewrite <- lsagree_getpair; eauto.
+  Qed. *)
+
+  (* Theorem forward_simulation_safe_swap:
   forward_simulation (Linear.semantics prog) 
                      (Linear.semantics tprog).
   Proof.
@@ -730,7 +832,7 @@ Section SINGLE_SWAP_CORRECTNESS.
     - apply transf_initial_states.
     - apply transf_final_states.
     - apply simulation.
-  Qed.
+  Qed. *)
 
 
 End SINGLE_SWAP_CORRECTNESS.
