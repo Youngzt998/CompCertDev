@@ -218,6 +218,13 @@ Definition happens_before (i1 i2: instruction): bool :=
 
 Notation "i1 D~> i2":= (happens_before i1 i2) (at level 1).
 
+Lemma solid_inst_indep1: forall i1 i2, solid_inst i1 = true -> i1 D~> i2 = true.
+Proof. intros. destruct i1, i2; simpl in *; try discriminate H; auto. Qed.
+
+Lemma indep_inv_not_solid1: forall i1 i2, i1 D~> i2 = false -> solid_inst i1 = false.
+Proof. intros. remember (solid_inst i1) as b. destruct b. symmetry in Heqb. 
+  unfold happens_before in H. rewrite Heqb in H; auto. auto. Qed.
+
 
 Definition try_swap_code:= try_swap happens_before.
 
@@ -570,6 +577,17 @@ Section SINGLE_SWAP_CORRECTNESS.
   Proof. intros. induction H; auto; subst. eapply sd_step_silent in H; eauto. erewrite E0_right; eauto. Qed.
 
 
+  (* Lemma regular_state_return_match:
+  forall stk1 stk1' fb fb' sp sp' rs1 rs1' m1 m1' s2 t
+  (s1:= State stk1 fb sp [] rs1 m1) 
+  (STEP: step ge s1 t s2)
+  (s1':= State stk1' fb' sp' [] rs1' m1') 
+  (MATCH: match_states s1 s1'),
+    exists s2', step tge s1' t s2' /\ match_states s2 s2'.
+  Proof.
+    intros. inversion STEP. inv STEP.
+
+  Admitted. *)
 
   Lemma regular_state_one_step_match:
   forall stk1 stk1' fb fb' sp sp' c c' rs1 rs1' m1 m1' s2 i t
@@ -669,7 +687,7 @@ Section SINGLE_SWAP_CORRECTNESS.
 
   Definition next_exec (s: state): option instruction :=
     match s with
-    | State _ _ _ (Lreturn :: _) _ _ => None
+    (* | State _ _ _ (Lreturn :: _) _ _ => None *)
     | State _ _ _ (i :: _) _ _ => Some i
     | _ => None
     end.
@@ -689,16 +707,26 @@ Section SINGLE_SWAP_CORRECTNESS.
 
   Inductive match_states_aux: index -> state -> state -> Prop :=
   | match_now : forall s s', match_states s s' -> match_states_aux None s s'
-  | match_next: 
+  | match_before: 
       forall sa i sa' t sb,
         (* next_is_extern sa = false -> next_is_extern sb = false -> *)
-        next_exec sa = Some i ->
+        next_exec sa = Some i -> solid_inst i = false ->
         step ge sa t sb -> match_states sa sa' -> 
           match_states_aux (Some i) sb sa'
   .
 
   Let tPlus := Plus (semantics tprog).
-  Let tStar := Star (semantics tprog). 
+  Let tStar := Star (semantics tprog).
+
+  Lemma one_inst_to_nil: forall ge sl1 f1 sp1 i1 rs1 m1 t s2,
+    step ge (State sl1 f1 sp1 [i1] rs1 m1) t s2 -> 
+    solid_inst i1 = false ->
+      (exists sl2 f2 sp2 rs2 m2, s2 = State sl2 f2 sp2 [] rs2 m2).
+      (* \/ (exists sl2 f2 rs2 m2, s2 = Callstate sl2 f2 rs2 m2)
+      \/ (exists sl2 rs2 m2, s2 = Returnstate sl2 rs2 m2). *)
+  Proof. intros. assert (Hstep := H); set (s2_ := s2).
+     inv H; try discriminate H0; eexists _, _, _, _, _; eapply eq_refl. Qed.
+
   Lemma simulation:
     forall s1 t s2, step ge s1 t s2 -> 
       forall b s1', match_states_aux b s1 s1' ->
@@ -708,35 +736,77 @@ Section SINGLE_SWAP_CORRECTNESS.
   Proof.
     intros. inv H0.
     - (* match now *)
-      destruct s1.
-      + (* regular state *) admit.
+      set (s1'_:=s1'). assert (Hm:= H1). inv H1.
+      + (* regular state *) destruct c as [ | i1]. inv H.
+        destruct c as [|i2 c].
+        (* only one inst left - one step matching *)
+        { edestruct regular_state_one_step_match.
+          eapply H. eapply match_regular_state; eauto. eapply try_swap_at_tail.
+          eexists None, x. destruct H0. split; left; eauto. eapply plus_one.  
+          erewrite <- try_swap_singleton in H0; eauto. }
+        (* may be a swapping *)
+        destruct n_c.
+        (* try swapping now *)
+        { simpl in *. remember (i1 D~> i2) as INDEP; symmetry in HeqINDEP. destruct INDEP.
+          (* swapping failed, one step matching*)
+          { edestruct regular_state_one_step_match. eapply H. 
+            eapply match_regular_state; eauto.
+            eapply try_swap_at_tail. destruct H0. 
+            exists None, x; eauto. split; left; eauto. eapply plus_one; eauto. }
+          (* swapping succeeded, delayed mathching *)
+          { eexists (Some i1), s1'_. split. right; eauto; simpl. split. 
+            assert (t = E0). { inv H; auto; simpl in HeqINDEP. discriminate HeqINDEP. } 
+            subst. eapply star_refl. eapply orderb_neq.
+            eapply match_before; eauto. auto.
+            eapply indep_inv_not_solid1; eauto.
+          }
+        }
+        (* try swapping later *)
+        { simpl in *. edestruct regular_state_one_step_match. eapply H. 
+        eapply match_regular_state; eauto. instantiate(2:=Datatypes.S n_c).
+        simpl. eapply eq_refl. destruct H0. 
+        exists None, x; eauto. split; left; eauto. eapply plus_one; eauto. }
       + (* call state, one step matching *) 
         inv H.
         (* call internal *)
-        { inv H1. inv MEM.
-          inv FUNC. eexists None, (State _ _ _ _ _ _). split.
+        { inv MEM. inv FUNC. eexists None, (State _ _ _ _ _ _). split.
           left. eapply plus_one.
           eapply exec_function_internal; eauto. eapply match_now.
           eapply match_regular_state; eauto. simpl. eapply eq_refl.
           eapply lsagree_undef_regs, lsagree_call_regs; auto. mem_eq. }
         (* call external *)
-        { inv H1. inv MEM. 
-          inv FUNC. eexists None, (Returnstate _ _ _). split.
-          left. eapply plus_one.
-          eapply exec_function_external; eauto.
-          eapply extcall_genv_irrelevent in H8.
+        { inv MEM. inv FUNC. eexists None, (Returnstate _ _ _). split.
+          left. eapply plus_one. eapply exec_function_external; eauto.
+          eapply extcall_genv_irrelevent in H7.
           assert( forall l, map (fun p => Locmap.getpair p rs) l = map (fun p=> Locmap.getpair p rs') l).
           { induction l; auto. simpl. erewrite lsagree_getpair; eauto. erewrite IHl; eauto. }
-          erewrite H in H8. eauto. eapply senv_preserved. eapply match_now.
+          erewrite H in H7. eauto. eapply senv_preserved. eapply match_now.
           eapply match_return_state; eauto. eapply lsagree_setpair. 
           eapply lsagree_undef_caller_save_regs; auto. mem_eq. }
       + (* return state, one step matching *)
-        inv H. inv H1. inv MEM. inv STL. inv H1.
+        inv H. inv MEM. inv STL. inv H1.
         eexists None, (State _ _ _ _ _ _); split; left. eapply plus_one. 
         eapply exec_return. eapply match_regular_state; eauto. mem_eq.
     - (* match before *)
-      destruct sa.
-      + (* regular state *) admit.
+      set(sa_ := sa). assert(Hm:= H4). inv H4.
+      + (* regular state *) rename i into i1.
+        destruct c; simpl in H1. discriminate H1. inv H1. destruct c as [|i2 c].
+        (* only one inst left but not a return - impossible *)
+        {
+          eapply one_inst_to_nil in H3 as [sl1 [f1 [sp1 [rs1 [m1]]]]].
+          subst. inv H. auto. }
+        (* more than two inst left,  *)
+        destruct n_c.
+        (* may be two swapped inst *)
+        { simpl in *.
+          admit. }
+        (* not swapped here *)
+        { simpl in *. edestruct regular_state_one_step_match. eapply H3. eapply Hm.
+          destruct H0. destruct c as [| i3 c].
+          {
+
+          }
+        admit. }
       + (* call state *) simpl in H1; discriminate H1.
       + (* return state *) simpl in H1; discriminate H1.
   Admitted.
@@ -814,7 +884,7 @@ Section SINGLE_SWAP_CORRECTNESS.
     intros. inv H.
     - (* match now *) eapply transf_final_states0; eauto.
     - (* match before, not possible *)
-      inv H0. inv H2; simpl in H1; discriminate H1.
+      inv H0. inv H3; simpl in H1; inv H1; discriminate H2.
   Qed.
 
   Theorem forward_simulation_safe_swap:
