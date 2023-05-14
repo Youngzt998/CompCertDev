@@ -674,27 +674,27 @@ Section SINGLE_SWAP_CORRECTNESS.
     | _ => None
     end.
 
-  Definition index := bool.
-  Inductive orderb: bool -> bool -> Prop :=
-    | orderb_neq: orderb true false
+  Definition index := option instruction.
+  Inductive orderb: index -> index -> Prop :=
+    | orderb_neq: forall i, orderb (Some i) None
     .
 
   Lemma wf_orderb: well_founded orderb.
   Proof.
-    hnf. Locate well_founded.
+    hnf.
     intros. eapply Acc_intro.
     intros. induction H. eapply Acc_intro.
     intros. inv H.
   Qed.
 
   Inductive match_states_aux: index -> state -> state -> Prop :=
-  | match_now : forall s s', match_states s s' -> match_states_aux false s s'
+  | match_now : forall s s', match_states s s' -> match_states_aux None s s'
   | match_next: 
       forall sa i sa' t sb,
         (* next_is_extern sa = false -> next_is_extern sb = false -> *)
         next_exec sa = Some i ->
         step ge sa t sb -> match_states sa sa' -> 
-          match_states_aux true sb sa'
+          match_states_aux (Some i) sb sa'
   .
 
   Let tPlus := Plus (semantics tprog).
@@ -706,7 +706,39 @@ Section SINGLE_SWAP_CORRECTNESS.
           (tPlus s1' t s2' \/ (tStar s1' t s2' /\ orderb b' b) ) 
         /\ match_states_aux b' s2 s2'. 
   Proof.
-
+    intros. inv H0.
+    - (* match now *)
+      destruct s1.
+      + (* regular state *) admit.
+      + (* call state, one step matching *) 
+        inv H.
+        (* call internal *)
+        { inv H1. inv MEM.
+          inv FUNC. eexists None, (State _ _ _ _ _ _). split.
+          left. eapply plus_one.
+          eapply exec_function_internal; eauto. eapply match_now.
+          eapply match_regular_state; eauto. simpl. eapply eq_refl.
+          eapply lsagree_undef_regs, lsagree_call_regs; auto. mem_eq. }
+        (* call external *)
+        { inv H1. inv MEM. 
+          inv FUNC. eexists None, (Returnstate _ _ _). split.
+          left. eapply plus_one.
+          eapply exec_function_external; eauto.
+          eapply extcall_genv_irrelevent in H8.
+          assert( forall l, map (fun p => Locmap.getpair p rs) l = map (fun p=> Locmap.getpair p rs') l).
+          { induction l; auto. simpl. erewrite lsagree_getpair; eauto. erewrite IHl; eauto. }
+          erewrite H in H8. eauto. eapply senv_preserved. eapply match_now.
+          eapply match_return_state; eauto. eapply lsagree_setpair. 
+          eapply lsagree_undef_caller_save_regs; auto. mem_eq. }
+      + (* return state, one step matching *)
+        inv H. inv H1. inv MEM. inv STL. inv H1.
+        eexists None, (State _ _ _ _ _ _); split; left. eapply plus_one. 
+        eapply exec_return. eapply match_regular_state; eauto. mem_eq.
+    - (* match before *)
+      destruct sa.
+      + (* regular state *) admit.
+      + (* call state *) simpl in H1; discriminate H1.
+      + (* return state *) simpl in H1; discriminate H1.
   Admitted.
 
 
@@ -752,13 +784,13 @@ Section SINGLE_SWAP_CORRECTNESS.
     intros. inv H.
     eapply (Genv.find_funct_ptr_match TRANSF) in H2; eauto.
     destruct H2 as [cu [tf [? []]]]. inv H2.
-    - exists false, (Callstate [] (Internal ((try_swap_nth_func n f0))) (Locmap.init Vundef) m0).
+    - exists None, (Callstate [] (Internal ((try_swap_nth_func n f0))) (Locmap.init Vundef) m0).
       split. eapply initial_state_intro; eauto.
       eapply (Genv.init_mem_match TRANSF); trivial. 
       rewrite (match_program_main TRANSF); rewrite symbols_preserved; auto.
       eapply match_now, match_call_state; eauto. eapply Forall2_nil.
       eapply match_fundef0_internal. eapply lsagree_refl. reflexivity.
-    - exists false, (Callstate [] (External f0)  (Locmap.init Vundef) m0).
+    - exists None, (Callstate [] (External f0)  (Locmap.init Vundef) m0).
       split. eapply initial_state_intro; eauto.
       eapply (Genv.init_mem_match TRANSF); trivial. 
       rewrite (match_program_main TRANSF); rewrite symbols_preserved; auto.
@@ -774,8 +806,6 @@ Section SINGLE_SWAP_CORRECTNESS.
     eapply final_state_intro. 
     erewrite <- lsagree_getpair; eauto.
   Qed.
-
-
 
   Lemma transf_final_states:
     forall b st1 st2 r,
