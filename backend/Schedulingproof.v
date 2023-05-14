@@ -675,15 +675,7 @@ Section SINGLE_SWAP_CORRECTNESS.
       eapply exec_return. eapply match_regular_state; eauto. mem_eq.
   Admitted.
 
-  (*
-       sa ~~~~~~~> sb
-        |         /
-        |       /
-  match |     / aux. match
-        |   /
-        | /
-        sa'
-  *)
+
 
   Definition next_exec (s: state): option instruction :=
     match s with
@@ -705,6 +697,15 @@ Section SINGLE_SWAP_CORRECTNESS.
     intros. inv H.
   Qed.
 
+    (*
+       sa ~~~~~~~> sb
+        |         /
+        |       /
+  match |     / aux. match
+        |   /
+        | /
+        sa'
+  *)
   Inductive match_states_aux: index -> state -> state -> Prop :=
   | match_now : forall s s', match_states s s' -> match_states_aux None s s'
   | match_before: 
@@ -718,14 +719,17 @@ Section SINGLE_SWAP_CORRECTNESS.
   Let tPlus := Plus (semantics tprog).
   Let tStar := Star (semantics tprog).
 
-  Lemma one_inst_to_nil: forall ge sl1 f1 sp1 i1 rs1 m1 t s2,
-    step ge (State sl1 f1 sp1 [i1] rs1 m1) t s2 -> 
+  Lemma exec_one_inst: forall ge sl1 f1 sp1 i1 c rs1 m1 t s2,
+    step ge (State sl1 f1 sp1 (i1 :: c) rs1 m1) t s2 -> 
     solid_inst i1 = false ->
-      (exists sl2 f2 sp2 rs2 m2, s2 = State sl2 f2 sp2 [] rs2 m2).
+      (exists sl2 f2 sp2 rs2 m2, s2 = State sl2 f2 sp2 c rs2 m2).
       (* \/ (exists sl2 f2 rs2 m2, s2 = Callstate sl2 f2 rs2 m2)
       \/ (exists sl2 rs2 m2, s2 = Returnstate sl2 rs2 m2). *)
   Proof. intros. assert (Hstep := H); set (s2_ := s2).
      inv H; try discriminate H0; eexists _, _, _, _, _; eapply eq_refl. Qed.
+
+  Lemma try_swap_code_singleton: forall n i, try_swap_code n [i] = [i].
+  Proof. apply try_swap_singleton. Qed.
 
   Lemma simulation:
     forall s1 t s2, step ge s1 t s2 -> 
@@ -793,24 +797,53 @@ Section SINGLE_SWAP_CORRECTNESS.
         destruct c; simpl in H1. discriminate H1. inv H1. destruct c as [|i2 c].
         (* only one inst left but not a return - impossible *)
         {
-          eapply one_inst_to_nil in H3 as [sl1 [f1 [sp1 [rs1 [m1]]]]].
+          eapply exec_one_inst in H3 as [sl1 [f1 [sp1 [rs1 [m1]]]]].
           subst. inv H. auto. }
         (* more than two inst left,  *)
         destruct n_c.
         (* may be two swapped inst *)
+          (*
+              sa ~~~~~~~> s1 ~~~~~~~> s2
+                |         /
+                |       /
+          match |     / aux. match
+                |   /
+                | /
+                s1'
+          *)
         { simpl in *.
           admit. }
         (* not swapped here *)
         { simpl in *. edestruct regular_state_one_step_match. eapply H3. eapply Hm.
           destruct H0. destruct c as [| i3 c].
-          {
+          (* not swapped here, either *)
+          { erewrite try_swap_code_singleton in H0.
+            eapply exec_one_inst in H3 as [sl1 [f1 [sp1 [rs1 [m1]]]]]; eauto. subst.
+            assert(Hm1:= H1). inv H1. erewrite try_swap_code_singleton in Hm1.
+            edestruct regular_state_one_step_match. eapply H. eapply Hm1.
+            destruct H1. exists None, x. split; left; eauto.
+            erewrite try_swap_code_singleton. erewrite try_swap_code_singleton in H0. 
+            eapply plus_two; eauto.
+            assert(t0 = E0). { inv H0; auto. discriminate H2. } subst.
+            apply E0_left. }
+          { destruct n_c.
+            { simpl in *. 
+            admit. }
+
+            { simpl in *. assert(Hstep0 := H0). 
+              eapply exec_one_inst in H0 as [sl1' [f1' [sp1' [rs1' [m1']]]]]; eauto. subst.
+              eapply exec_one_inst in H3 as [sl1 [f1 [sp1 [rs1 [m1]]]]]; eauto. subst.
+              edestruct regular_state_one_step_match. eapply H. eapply H1.
+              destruct H0. exists None, x. split; left; eauto. 
+              eapply plus_two; eauto. assert(t0 = E0). 
+              { inv Hstep0; auto. discriminate H2. } subst. apply E0_left.
+            } 
 
           }
-        admit. }
+       }
       + (* call state *) simpl in H1; discriminate H1.
       + (* return state *) simpl in H1; discriminate H1.
   Admitted.
-
 
   (* Inductive match_states_aux: state -> state -> Prop :=
     | match_now : forall s s', match_states s s' -> match_states_aux s s'
