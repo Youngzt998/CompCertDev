@@ -63,7 +63,11 @@ Section TOPO.
       destruct (rel x a); inv H; eapply try_swap_at_tail.
     - destruct l. inv H. exists O; auto. inv H. exists n; auto.
   Qed.
-       
+  
+  (* Lemma try_swap_head_changed:
+    forall n x y l, try_swap n (x :: y :: l) = y :: x :: l ->
+      exists n', try_swap n' l = l.
+  Proof.  *)
 
   Section DECIDE_REL.
     Variable (Rel: A -> A -> Prop).
@@ -602,6 +606,16 @@ Section SINGLE_SWAP_CORRECTNESS.
       discriminate H.
   Qed.
 
+  Lemma exec_one_inst: forall ge sl1 f1 sp1 i1 c rs1 m1 t s2,
+  step ge (State sl1 f1 sp1 (i1 :: c) rs1 m1) t s2 -> 
+  solid_inst i1 = false ->
+    (exists sl2 f2 sp2 rs2 m2, s2 = State sl2 f2 sp2 c rs2 m2).
+  Proof. intros. assert (Hstep := H); set (s2_ := s2).
+    inv H; try discriminate H0; eexists _, _, _, _, _; eapply eq_refl. Qed.
+
+  Lemma try_swap_code_singleton: forall n i, try_swap_code n [i] = [i].
+  Proof. apply try_swap_singleton. Qed.
+
   Lemma regular_state_one_step_match:
   forall stk1 stk1' fb fb' sp sp' c c' rs1 rs1' m1 m1' s2 i t
   (s1:= State stk1 fb sp (i :: c) rs1 m1) 
@@ -688,19 +702,96 @@ Section SINGLE_SWAP_CORRECTNESS.
     inv STK; eauto. eapply lsagree_refl. simpl. destruct x; destruct y; auto. inv H; auto. mem_eq.
   Qed.
 
-
   Lemma independent_two_step_match:
-      forall stk1 stk1' f f' sp sp' c rs1 rs1' m1 m1' s3 i1 i2 t
+      forall stk stk' f f' sp sp' c rs rs' m m' s3 i1 i2 t
       (INDEP: i1 D~> i2 = false)
-      (s1:= State stk1 f sp (i1::i2::c) rs1 m1)
+      (s1:= State stk f sp (i1::i2::c) rs m)
       (STEP13: starN step ge 2 s1 t s3)
-      (s1':= State stk1' f' sp' (i2::i1::c) rs1' m1')
+      (s1':= State stk' f' sp' (i2::i1::c) rs' m')
       (MAT: match_states s1 s1'),
-      exists s3', tPlus s1' t s3' /\ match_states s3 s3'.
+        exists s3', tPlus s1' t s3' /\ match_states s3 s3'.
   Proof.
+    intros.
+    inv STEP13. rename s' into s2. inv H1. inv H3. rename t0 into t2.
+    assert(B:forall b b1: bool, (if b then b1 else b1) = b1). intros; destruct b; auto.
+    (* inv STEP13'. rename s' into s2'. inv H3. inv H5. rename t0 into t1'. rename t4 into t2'. *)
+    
+    (* 13 branches in total need to reason dependences; others can be discriminated instinctly *)
+    assert(Hstep12 := H0). assert(Hstep23 := H2). set(s2_ := s2). set(s3_ := s3).
+    inv H0; inv H2; unfold happens_before in INDEP; simpl in INDEP; 
+      try rewrite B in INDEP; try discriminate INDEP;
+      fold s2_ in Hstep12, Hstep23; fold s3_ in Hstep23.
+    (* Mgetstack D~> i2 *)
+        (* Mgetstack D~> Mgetstack *)
+        + set(s2' := State stk' f' sp' (Lgetstack sl ofs ty dst :: c)
+                      (Locmap.set (R dst0) (rs' (S sl0 ofs0 ty0))
+                        (LTL.undef_regs (LTL.destroyed_by_getstack sl0) rs')) m').
+          assert(Hstep12': step tge s1' E0 s2'). eapply exec_Lgetstack; eauto.
+          set(s3' :=  
+            State stk' f' sp' c
+              (Locmap.set (R dst)
+                (Locmap.set (R dst0) (rs' (S sl0 ofs0 ty0))
+                    (LTL.undef_regs (LTL.destroyed_by_getstack sl0) rs')
+                    (S sl ofs ty))
+                (LTL.undef_regs (LTL.destroyed_by_getstack sl)
+                    (Locmap.set (R dst0) (rs' (S sl0 ofs0 ty0))
+                      (LTL.undef_regs (LTL.destroyed_by_getstack sl0) rs')))) m').
+          assert(Hstep23':step tge s2' E0 s3'). eapply exec_Lgetstack; eauto.
+          eexists s3'; split. eapply plus_two; eauto.
+          inv MAT; eapply match_regular_state; eauto. eapply try_swap_at_tail.
 
-
-
+          admit.
+        (* Mgetstack D~> Mgetparam  *)
+        (* + inv H2; inv H4. 
+          eapply match_regular_states; eauto; inv MATCH; eauto.
+          eapply try_swap_at_tail. inv MEM.
+          erewrite match_stack_inv_parent_sp in H18.
+          rewrite H12 in H15; inv H15. erewrite H18 in H14. inv H14. 
+          intro; unfold Regmap.get. 
+          destruct (mreg_eq r dst); destruct (mreg_eq r dst0); 
+          destruct (mreg_eq r temp_for_parent_frame); subst; simpl; eauto.
+          admit. *)
+        (* Mgetstack D~> Mop  *)
+        + inv H2; inv H4. 
+          eapply match_regular_states; eauto; inv MATCH; eauto.
+          eapply try_swap_at_tail. inv MEM.
+          rewrite H12 in H13; inv H13.
+          admit. 
+        (* Mgetstack D~> Mload  *)
+        + inv H2; inv H4. admit.
+        
+      (* Msetstack D~> i2: trivial & discriminated *)
+        (* Msetstack D~> Mop *)
+        + admit.
+      (* Mgetparam D~> i2: discriminated *)
+      (* Mop D~> i2 *)
+        (* Mop D~> Mgetstack  *)
+        + admit.
+        (* Mop D~> Mset  *)
+        + admit.
+        (* Mop D~> Mgetparam: discriminated *)
+        (* Mop D~> Mop *)
+        + admit.
+        (* Mop D~> Mload *)
+        + admit.
+        (* Mop D~> Mstore *)
+        + admit.
+      (* Mload D~> i2 *)
+        (* Mload D~> Mgetstack *)
+        + admit.
+        (* Mload D~> Mgetparam *)
+        (* Mload D~> Mop *)
+        + admit.
+        (* Mload D~> Mload *)
+        + admit.
+      (* Mstore D~> i2: *)
+        (* Mstore D~> Mop *)
+        + admit.
+      (* Mcall D~> i2: trivial & discriminated *)
+      (* Mtailcall D~> i2: trivial & discriminated *)
+      (* Mbuiltin D~> i2: trivial & discriminated *)
+      (* Mgoto D~> i2: trivial & discriminated *)
+      (* Mcond D~> i2: trivial & discriminated*)
   Admitted.
 
 
@@ -743,19 +834,6 @@ Section SINGLE_SWAP_CORRECTNESS.
           match_states_aux (Some i) sb sa'
   .
 
-
-
-  Lemma exec_one_inst: forall ge sl1 f1 sp1 i1 c rs1 m1 t s2,
-    step ge (State sl1 f1 sp1 (i1 :: c) rs1 m1) t s2 -> 
-    solid_inst i1 = false ->
-      (exists sl2 f2 sp2 rs2 m2, s2 = State sl2 f2 sp2 c rs2 m2).
-      (* \/ (exists sl2 f2 rs2 m2, s2 = Callstate sl2 f2 rs2 m2)
-      \/ (exists sl2 rs2 m2, s2 = Returnstate sl2 rs2 m2). *)
-  Proof. intros. assert (Hstep := H); set (s2_ := s2).
-     inv H; try discriminate H0; eexists _, _, _, _, _; eapply eq_refl. Qed.
-
-  Lemma try_swap_code_singleton: forall n i, try_swap_code n [i] = [i].
-  Proof. apply try_swap_singleton. Qed.
 
   Lemma simulation:
     forall s1 t s2, step ge s1 t s2 -> 
