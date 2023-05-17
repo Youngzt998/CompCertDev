@@ -148,7 +148,9 @@ Definition solid_inst (i: instruction): bool :=
     match i with
     | Lcall _ _  | Ltailcall _ _  | Lbuiltin _ _ _ 
     | Llabel _  | Lgoto _ | Lcond _ _ _ | Ljumptable _ _
-    | Lreturn => true
+    | Lreturn 
+    (* | Lgetstack _ _ _ _ | Lsetstack _ _ _ _ *)
+        => true
     | _ => false
     end.
 
@@ -159,6 +161,7 @@ Definition mem_write (i: instruction): option bool :=
     match i with
     | Lgetstack _ _ _ _ => Some false
     | Lsetstack _ _ _ _ => Some true
+    (* will be true in Mach IR *)
     | Lload _ _ _ dst => Some false
     | Lstore _ _ _ src => Some true
     | _ => None
@@ -222,6 +225,11 @@ Definition happens_before (i1 i2: instruction): bool :=
 
 Notation "i1 D~> i2":= (happens_before i1 i2) (at level 1).
 
+Definition try_swap_code:= try_swap happens_before.
+
+Definition try_swap_nth_func (n: nat)(f: function):= 
+    mkfunction f.(fn_sig) f.(fn_stacksize) (try_swap_code n f.(fn_code)) .
+
 Lemma solid_inst_indep1: forall i1 i2, solid_inst i1 = true -> i1 D~> i2 = true.
 Proof. intros. destruct i1, i2; simpl in *; try discriminate H; auto. Qed.
 
@@ -232,24 +240,6 @@ Proof. intros. remember (solid_inst i1) as b. destruct b. symmetry in Heqb.
 Lemma indep_inv_not_solid2: forall i1 i2, i1 D~> i2 = false -> solid_inst i2 = false.
 Proof. intros. remember (solid_inst i2) as b2. symmetry in Heqb2. unfold happens_before in H. 
     destruct b2; rewrite Heqb2 in H; destruct (solid_inst i1); auto. Qed.
-
-Definition try_swap_code:= try_swap happens_before.
-
-Definition try_swap_nth_func (n: nat)(f: function):= 
-    mkfunction f.(fn_sig) f.(fn_stacksize) (try_swap_code n f.(fn_code)) .
-
-Definition transf_function_try_swap_nth (n: nat) (f: function) : res function :=
-    OK (try_swap_nth_func n f).
-
-Definition transf_fundef_try_swap_nth (n: nat) (f: fundef) : res fundef :=  
-  AST.transf_partial_fundef (transf_function_try_swap_nth n) f.
-
-(** only swap one independent pair in one function *)
-Definition transf_program_try_swap_nth_in_one (funid: ident) (n: nat) (p: program): res program :=
-  transform_partial_program2 
-  (fun i f => if ident_eq i funid then transf_fundef_try_swap_nth n f else OK f) 
-  (fun i v => OK v) p.
-
 
 
 Section LOCSET_AGREE.
@@ -351,7 +341,9 @@ Section LOCSET_AGREE.
     lsagree (Locmap.setres res vres rs) (Locmap.setres res vres rs').
   Proof. intros res. induction res; simpl; auto.
     intros; intro. eapply lsagree_set; auto. Qed.
-    
+  
+  Print Locmap.set. Check Locmap.set. Check Loc.diff.
+  Locate undef_regs.
 
 End LOCSET_AGREE.
 
@@ -465,6 +457,20 @@ Lemma Linear_determ: forall p, determinate (Linear.semantics p).
     - intros. hnf. intros. intro. inv H. inv H0. 
     - intros. inv H; inv H0. rewrite H1 in H4. inv H4; auto.
   Qed.
+
+
+  
+Definition transf_function_try_swap_nth (n: nat) (f: function) : res function :=
+  OK (try_swap_nth_func n f).
+
+Definition transf_fundef_try_swap_nth (n: nat) (f: fundef) : res fundef :=  
+  AST.transf_partial_fundef (transf_function_try_swap_nth n) f.
+
+(** only swap one independent pair in one function *)
+Definition transf_program_try_swap_nth_in_one (funid: ident) (n: nat) (p: program): res program :=
+  transform_partial_program2 
+  (fun i f => if ident_eq i funid then transf_fundef_try_swap_nth n f else OK f) 
+  (fun i v => OK v) p.
 
 Inductive match_fundef0: fundef -> fundef -> Prop :=
   | match_fundef0_internal: forall n f,
@@ -702,6 +708,26 @@ Section SINGLE_SWAP_CORRECTNESS.
     inv STK; eauto. eapply lsagree_refl. simpl. destruct x; destruct y; auto. inv H; auto. mem_eq.
   Qed.
 
+
+
+  (* Lemma lsagree_independent_write:
+
+    lsagree
+    (Locmap.set (R dst0)
+       (Locmap.set (R dst) (rs (S sl ofs ty))
+          (LTL.undef_regs (LTL.destroyed_by_getstack sl) rs) 
+          (S sl0 ofs0 ty0))
+       (LTL.undef_regs (LTL.destroyed_by_getstack sl0)
+          (Locmap.set (R dst) (rs (S sl ofs ty))
+             (LTL.undef_regs (LTL.destroyed_by_getstack sl) rs))))
+    (Locmap.set (R dst)
+       (Locmap.set (R dst0) (rs' (S sl0 ofs0 ty0))
+          (LTL.undef_regs (LTL.destroyed_by_getstack sl0) rs') 
+          (S sl ofs ty))
+       (LTL.undef_regs (LTL.destroyed_by_getstack sl)
+          (Locmap.set (R dst0) (rs' (S sl0 ofs0 ty0))
+             (LTL.undef_regs (LTL.destroyed_by_getstack sl0) rs')))) *)
+
   Lemma independent_two_step_match:
       forall stk stk' f f' sp sp' c rs rs' m m' s3 i1 i2 t
       (INDEP: i1 D~> i2 = false)
@@ -727,20 +753,76 @@ Section SINGLE_SWAP_CORRECTNESS.
                       (Locmap.set (R dst0) (rs' (S sl0 ofs0 ty0))
                         (LTL.undef_regs (LTL.destroyed_by_getstack sl0) rs')) m').
           assert(Hstep12': step tge s1' E0 s2'). eapply exec_Lgetstack; eauto.
-          set(s3' :=  
-            State stk' f' sp' c
-              (Locmap.set (R dst)
-                (Locmap.set (R dst0) (rs' (S sl0 ofs0 ty0))
-                    (LTL.undef_regs (LTL.destroyed_by_getstack sl0) rs')
-                    (S sl ofs ty))
-                (LTL.undef_regs (LTL.destroyed_by_getstack sl)
-                    (Locmap.set (R dst0) (rs' (S sl0 ofs0 ty0))
-                      (LTL.undef_regs (LTL.destroyed_by_getstack sl0) rs')))) m').
+          set(s3' := State stk' f' sp' c
+                      (Locmap.set (R dst)
+                        (Locmap.set (R dst0) (rs' (S sl0 ofs0 ty0))
+                            (LTL.undef_regs (LTL.destroyed_by_getstack sl0) rs')
+                            (S sl ofs ty))
+                        (LTL.undef_regs (LTL.destroyed_by_getstack sl)
+                            (Locmap.set (R dst0) (rs' (S sl0 ofs0 ty0))
+                              (LTL.undef_regs (LTL.destroyed_by_getstack sl0) rs')))) m').
           assert(Hstep23':step tge s2' E0 s3'). eapply exec_Lgetstack; eauto.
           eexists s3'; split. eapply plus_two; eauto.
           inv MAT; eapply match_regular_state; eauto. eapply try_swap_at_tail.
+          assert (B1: forall b:bool, (if b then true else false) = false -> b = false). destruct b; auto.
+          apply B1 in INDEP. unfold happens_before_ww in INDEP; simpl in INDEP.
+          (* assert(AUX: forall dsta dstb,  ) *)
 
-          admit.
+          intro. unfold Locmap.get; unfold Locmap.set.
+          destruct (Loc.eq (R dst) (S sl0 ofs0 ty0)). inv e.
+          destruct (Loc.eq (R dst0) (S sl ofs ty)). inv e.
+          destruct (Loc.diff_dec (R dst) (S sl0 ofs0 ty0)). 2: { exfalso. apply n1. unfold Loc.diff. auto. }
+          destruct (Loc.diff_dec (R dst0) (S sl ofs ty)). 2: { exfalso. apply n1. unfold Loc.diff. auto. }
+
+          destruct (Loc.eq (R dst0) r); destruct (Loc.eq (R dst) r).
+          (* R dst0 = r /\ R dst = r  -- not possible *)
+          { subst. inv e0. destruct (mreg_eq dst0 dst0) in INDEP. discriminate INDEP.
+            exfalso; apply n1; auto. }
+          (* R dst0 = r /\ R dst <> r *)
+          { subst. destruct (Loc.diff_dec (R dst) (R dst0)). 
+            2:{ exfalso. apply n2. simpl; intro; subst; auto. }
+            (* fine *)  admit. }
+          (* R dst0 <> r /\ R dst = r *)
+          { subst. destruct (Loc.diff_dec (R dst0) (R dst)).
+            2: { exfalso. apply n2. simpl; intro; subst; auto. }
+            (* fine *) admit. }
+          (* R dst0 <> r /\ R dst <> r *)
+          { destruct (Loc.diff_dec (R dst) (R dst0)).
+            2:{ assert(dst <> dst0). destruct (mreg_eq dst dst0) in INDEP. discriminate INDEP.
+                  intro. apply n3; auto. exfalso. apply n3. auto. }
+            simpl in d1.
+            destruct (Loc.diff_dec (R dst0) r); auto.
+            2:{ exfalso. apply n3. simpl. destruct r; auto. intro; subst; auto. } 
+            destruct (Loc.diff_dec (R dst) r); auto.
+            2:{ exfalso. apply n3. simpl. destruct r; auto. intro; subst; auto. }
+            (* fine ..? *)
+            (* destruct (sl0); destruct (sl); unfold LTL.destroyed_by_getstack;
+            unfold LTL.undef_regs.
+
+            (* destruct (LTL.destroyed_by_getstack sl0); destruct (LTL.destroyed_by_getstack sl); *)
+            unfold LTL.undef_regs at 1. 
+            fold  Loc.diff.
+            unfold LTL.undef_regs.  *)
+            admit. }
+
+          (* lsagree
+          (Locmap.set (R dst0)
+             (Locmap.set (R dst) (rs (S sl ofs ty))
+                (LTL.undef_regs (LTL.destroyed_by_getstack sl) rs)
+                (S sl0 ofs0 ty0))
+
+             (LTL.undef_regs (LTL.destroyed_by_getstack sl0)
+                (Locmap.set (R dst) (rs (S sl ofs ty))
+                   (LTL.undef_regs (LTL.destroyed_by_getstack sl) rs))))
+
+          (Locmap.set (R dst)
+             (Locmap.set (R dst0) (rs' (S sl0 ofs0 ty0))
+                (LTL.undef_regs (LTL.destroyed_by_getstack sl0) rs')
+                (S sl ofs ty))
+             (LTL.undef_regs (LTL.destroyed_by_getstack sl)
+                (Locmap.set (R dst0) (rs' (S sl0 ofs0 ty0))
+                   (LTL.undef_regs (LTL.destroyed_by_getstack sl0) rs')))) *)
+          
         (* Mgetstack D~> Mgetparam  *)
         (* + inv H2; inv H4. 
           eapply match_regular_states; eauto; inv MATCH; eauto.
@@ -752,18 +834,13 @@ Section SINGLE_SWAP_CORRECTNESS.
           destruct (mreg_eq r temp_for_parent_frame); subst; simpl; eauto.
           admit. *)
         (* Mgetstack D~> Mop  *)
-        + inv H2; inv H4. 
-          eapply match_regular_states; eauto; inv MATCH; eauto.
-          eapply try_swap_at_tail. inv MEM.
-          rewrite H12 in H13; inv H13.
-          admit. 
+        + admit.
         (* Mgetstack D~> Mload  *)
-        + inv H2; inv H4. admit.
+        + admit.
         
       (* Msetstack D~> i2: trivial & discriminated *)
         (* Msetstack D~> Mop *)
         + admit.
-      (* Mgetparam D~> i2: discriminated *)
       (* Mop D~> i2 *)
         (* Mop D~> Mgetstack  *)
         + admit.
