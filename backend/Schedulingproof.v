@@ -245,18 +245,17 @@ Definition happens_before_destroy (i1 i2: instruction) :=
 (* i1 i2 have dependence, order irrelevent *)
 Definition happens_before (i1 i2: instruction): bool :=
     (* solid dependence from control inst. like function calls, return, etc. *)
-    if solid_inst i1 then true
-    else if solid_inst i2 then true
+    solid_inst i1
+    || solid_inst i2
     (* register dependence *)
-    else if happens_before_rw i1 i2 then true
-    else if happens_before_rw i2 i1 then true
-    else if happens_before_ww i1 i2 then true
+    || happens_before_rw i1 i2
+    || happens_before_rw i2 i1
+    || happens_before_ww i1 i2
     (* memory dependence without alias information 
         - any two memory access with at least write are regarded to have dependence *)
-    else if happens_before_mem i1 i2 then true
+    || happens_before_mem i1 i2
     (* no dependence *)
-    else if happens_before_destroy i1 i2 then true 
-    else false.
+    || happens_before_destroy i1 i2.
 
 Notation "i1 D~> i2":= (happens_before i1 i2) (at level 1).
 
@@ -775,24 +774,19 @@ Section SINGLE_SWAP_CORRECTNESS.
     exfalso. apply n0. simpl. intro; subst. apply n; auto.
   Qed. 
 
-  Lemma eval_args_irrelevent: forall args rs res0 v0 op0,
+
+  Lemma eval_args_irrelevent: forall args rs res0 v0 destroy,
     mreg_in_list res0 args = false ->
-    mreg_list_intersec args (destroyed_by_op op0) = false ->
+    mreg_list_intersec args destroy = false ->
     LTL.reglist rs args
-    = (LTL.reglist
-        (Locmap.set (R res0) v0
-          (LTL.undef_regs (destroyed_by_op op0) rs))
-        args).
+    = (LTL.reglist (Locmap.set (R res0) v0 (LTL.undef_regs destroy rs)) args).
   Proof.
     intro. induction args; auto. intros. simpl in H, H0.
     rewrite orb_false_iff in H, H0. destruct H, H0. auto. simpl.
     rewrite <- IHargs; auto.
     assert( a <> res0 ). simpl in H. destruct mreg_eq. discriminate H. auto.
-    assert(rs (R a) = Locmap.set (R res0) v0
-                      (LTL.undef_regs (destroyed_by_op op0) rs) 
-                      (R a)).
-    unfold Locmap.set.
-    destruct (Loc.eq (R res0) (R a)). inv e; exfalso; auto.
+    assert(rs (R a) = Locmap.set (R res0) v0 (LTL.undef_regs destroy rs) (R a)).
+    unfold Locmap.set. destruct (Loc.eq (R res0) (R a)). inv e; exfalso; auto.
     destruct (Loc.diff_dec (R res0) (R a)). 2:{ exfalso. apply n0. simpl. auto. }
     eapply destroy_not_influenced; auto.
     rewrite H4; auto.
@@ -828,8 +822,13 @@ Section SINGLE_SWAP_CORRECTNESS.
     (* 13 branches in total need to reason dependences; others can be discriminated instinctly *)
     assert(Hstep12 := H0). assert(Hstep23 := H2). set(s2_ := s2). set(s3_ := s3).
     inv H0; inv H2; unfold happens_before in INDEP; simpl in INDEP; 
-      try rewrite B in INDEP; try discriminate INDEP;
+      try discriminate INDEP; repeat apply orb_false_iff in INDEP as [INDEP ?];
+      rename INDEP into RW; rename H into DES; rename H0 into MM;
+      try rename H1 into WW; try rename H2 into WR;
+      repeat apply orb_false_iff in DES as [DES]; rename H1 into DES0;
+      rename H0 into DES1; rename H into DES2;
       fold s2_ in Hstep12, Hstep23; fold s3_ in Hstep23.
+      
     (* Mgetstack D~> i2 *)
         (* Mgetstack D~> Mgetstack *)
         (* + set(s2' := State stk' f' sp' (Lgetstack sl ofs ty dst :: c)
@@ -925,23 +924,17 @@ Section SINGLE_SWAP_CORRECTNESS.
         (* Mop D~> Mgetparam: discriminated *)
 
         (* Mop D~> Mop *)
-        + assert(B1: forall b b': bool, (if b then true else b') = false -> b = false ).
-          { intros; destruct b; auto. }
-          eapply B1 in INDEP as RW. rewrite RW in INDEP.
-          eapply B1 in INDEP as WR. rewrite WR in INDEP.
-          eapply B1 in INDEP as WW. rewrite WW in INDEP. eapply B1 in INDEP as DS.
-          unfold happens_before_rw, happens_before_wr, happens_before_ww in RW, WR, WW;
-          simpl in RW, WR, WW. destruct (mreg_eq res res0); try discriminate WW; clear WW; clear INDEP.
-          Locate destroyed_by_op. Print LTL.reglist.
+        + simpl in RW, WR, WW. unfold happens_before_ww in WW; simpl in WW.
+          destruct (mreg_eq res res0); try discriminate WW.
           assert(  
-            eval_operation ge sp op (LTL.reglist rs args) m = Some v ->
+            eval_operation ge sp op (LTL.reglist rs args) m =
             eval_operation ge sp op
               (LTL.reglist
                   (Locmap.set (R res0) v0
                     (LTL.undef_regs (destroyed_by_op op0) rs))
-                  args) m = Some v
-          ).
-          Locate eval_operation.
+                  args) m
+          ). erewrite eval_args_irrelevent; eauto.
+          erewrite H in H10.
           admit.
 
           (* repeat eapply B1 in INDEP.
@@ -1024,7 +1017,6 @@ Section SINGLE_SWAP_CORRECTNESS.
         step ge sa t sb -> match_states sa sa' -> 
           match_states_aux (Some i) sb sa'
   .
-
 
   Lemma simulation:
     forall s1 t s2, step ge s1 t s2 -> 
@@ -1225,3 +1217,20 @@ Section SINGLE_SWAP_CORRECTNESS.
   Qed.
 
 End SINGLE_SWAP_CORRECTNESS.
+
+Lemma transf_program_forward_simulation:
+forall funid n prog tprog, 
+  transf_program_try_swap_nth_in_one funid n prog = OK tprog ->
+  forward_simulation (Linear.semantics prog) 
+                       (Linear.semantics tprog).
+Proof.
+  intros. eapply forward_simulation_safe_swap.
+  eapply transf_program_match; eauto.
+Qed.
+
+
+
+Section Multi_SWAP_CORRECTNESS.
+
+
+End Multi_SWAP_CORRECTNESS.
