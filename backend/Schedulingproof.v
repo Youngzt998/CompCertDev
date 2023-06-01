@@ -411,6 +411,29 @@ Proof.
 Qed. 
 
 
+
+
+(* TODO Warning: simple but machine dependent *)
+Section MACHINE_DEPENDENT_X86.
+
+Lemma eval_op_genv_irrelevent: forall prog tprog: program,
+  let ge := Genv.globalenv prog in let tge := Genv.globalenv tprog in
+    forall sp op lv m 
+    (SYMB: forall s, Genv.find_symbol tge s = Genv.find_symbol ge s),
+      eval_operation ge sp op lv m = eval_operation tge sp op lv m.
+Proof.
+  intros. destruct lv; auto. destruct op; simpl; auto.
+  unfold Genv.symbol_address. rewrite SYMB; auto.
+  unfold eval_addressing64. destruct Archi.ptr64; auto.
+  destruct a; auto. unfold Genv.symbol_address. rewrite SYMB; auto.
+Qed.
+
+End MACHINE_DEPENDENT_X86.
+
+
+
+
+
 Section FIND_LABEL.
 
 Lemma is_label_inv: forall lbl a, is_label lbl a = true -> a =  Llabel lbl.
@@ -624,7 +647,7 @@ Section SINGLE_SWAP_CORRECTNESS.
   Let tStar := Star (semantics tprog).
 
   Lemma symbols_preserved:
-  forall (s: ident), Genv.find_symbol tge s = Genv.find_symbol ge s.
+    forall (s: ident), Genv.find_symbol tge s = Genv.find_symbol ge s.
   Proof (Genv.find_symbol_match TRANSF).
 
   Lemma senv_preserved:
@@ -646,6 +669,8 @@ Section SINGLE_SWAP_CORRECTNESS.
       erewrite <- symbols_preserved in Heqfs. erewrite <- Heqfs. eauto. eauto.
       discriminate H.
   Qed.
+
+
 
   Lemma exec_one_inst: forall ge sl1 f1 sp1 i1 c rs1 m1 t s2,
   step ge (State sl1 f1 sp1 (i1 :: c) rs1 m1) t s2 -> 
@@ -806,6 +831,9 @@ Section SINGLE_SWAP_CORRECTNESS.
     erewrite <- eval_args_irrelevent; auto.
   Qed.
 
+  
+
+
   Lemma independent_two_step_match:
       forall stk stk' f f' sp sp' c rs rs' m m' s3 i1 i2 t
       (INDEP: i1 D~> i2 = false)
@@ -829,7 +857,7 @@ Section SINGLE_SWAP_CORRECTNESS.
       rename H0 into DES1; rename H into DES2;
       fold s2_ in Hstep12, Hstep23; fold s3_ in Hstep23.
       
-    (* Mgetstack D~> i2 *)
+    (* Lgetstack D~> i2 *)
         (* Mgetstack D~> Mgetstack *)
         (* + set(s2' := State stk' f' sp' (Lgetstack sl ofs ty dst :: c)
                       (Locmap.set (R dst0) (rs' (S sl0 ofs0 ty0))
@@ -898,7 +926,7 @@ Section SINGLE_SWAP_CORRECTNESS.
                 (Locmap.set (R dst0) (rs' (S sl0 ofs0 ty0))
                    (LTL.undef_regs (LTL.destroyed_by_getstack sl0) rs')))) *)
           
-        (* Mgetstack D~> Mgetparam  *)
+        (* Lgetstack D~> Lgetparam  *)
         (* + inv H2; inv H4. 
           eapply match_regular_states; eauto; inv MATCH; eauto.
           eapply try_swap_at_tail. inv MEM.
@@ -908,35 +936,56 @@ Section SINGLE_SWAP_CORRECTNESS.
           destruct (mreg_eq r dst); destruct (mreg_eq r dst0); 
           destruct (mreg_eq r temp_for_parent_frame); subst; simpl; eauto.
           admit. *)
-        (* Mgetstack D~> Mop  *)
+        (* Lgetstack D~> Lop  *)
         (* + admit. *)
-        (* Mgetstack D~> Mload  *)
+        (* Lgetstack D~> Lload  *)
         (* + admit. *)
         
       (* Msetstack D~> i2: trivial & discriminated *)
         (* Msetstack D~> Mop *)
         (* + admit. *)
-      (* Mop D~> i2 *)
-        (* Mop D~> Mgetstack  *)
+      (* Lop D~> i2 *)
+        (* Lop D~> Lgetstack  *)
         (* + admit. *)
-        (* Mop D~> Mset  *)
+        (* Lop D~> Lset  *)
         (* + admit. *)
-        (* Mop D~> Mgetparam: discriminated *)
+        (* Lop D~> Lgetparam: discriminated *)
 
-        (* Mop D~> Mop *)
-        + simpl in RW, WR, WW. unfold happens_before_ww in WW; simpl in WW.
-          destruct (mreg_eq res res0); try discriminate WW.
-          assert(  
-            eval_operation ge sp op (LTL.reglist rs args) m =
-            eval_operation ge sp op
-              (LTL.reglist
-                  (Locmap.set (R res0) v0
-                    (LTL.undef_regs (destroyed_by_op op0) rs))
-                  args) m
+        (* Lop D~> Lop *)
+        + set(f'_ := f'). inv MAT. inv MEM. rename sp' into sp. rename m' into m.
+          simpl in RW, WR, WW. unfold happens_before_ww in WW; simpl in WW.
+          destruct (mreg_eq res res0); try discriminate WW. 
+          assert(eval_operation ge sp op (LTL.reglist rs args) m
+                  = eval_operation ge sp op
+                    (LTL.reglist
+                        (Locmap.set (R res0) v0
+                          (LTL.undef_regs (destroyed_by_op op0) rs))
+                        args) m
           ). erewrite eval_args_irrelevent; eauto.
-          erewrite H in H10.
-          admit.
-
+          assert(eval_operation ge sp op0 (LTL.reglist rs args0) m
+                = eval_operation ge sp op0
+                  (LTL.reglist 
+                    (Locmap.set (R res) v (undef_regs (destroyed_by_op op) rs))
+                      args0) m
+          ). erewrite eval_args_irrelevent; eauto.
+          rewrite H10 in H; symmetry in H. rewrite H9 in H0.
+          set(s2' := State stk' f'_ sp (Lop op args res :: c)
+            (Locmap.set (R res0) v0 (undef_regs (destroyed_by_op op0) rs')) m).
+          eassert(Hstep12': step tge s1' E0 s2'). eapply exec_Lop; eauto.
+          unfold ge in H0; erewrite eval_op_genv_irrelevent in H0.
+          erewrite <- lsagree_reglist; eauto. eapply symbols_preserved.
+          eassert(Hstep23': step tge s2' E0 _). eapply exec_Lop; eauto.
+          unfold ge in H; erewrite eval_op_genv_irrelevent in H.
+          erewrite <- lsagree_reglist; eauto. eapply lsagree_set, lsagree_undef_regs; eauto.
+          eapply symbols_preserved. 
+          set(s3' := State stk' f'_ sp c
+              (Locmap.set (R res) v
+                (undef_regs (destroyed_by_op op)
+                    (Locmap.set (R res0) v0 (undef_regs (destroyed_by_op op0) rs')))) m).
+          exists s3'; split. eapply plus_two; eauto. eapply match_regular_state; eauto.
+          reflexivity. eapply try_swap_at_tail.
+          admit. (* fine *)
+          reflexivity.
           (* repeat eapply B1 in INDEP.
           set(s2' := State stk' f' sp' (Lgetstack sl ofs ty dst :: c)
                   (Locmap.set (R dst0) (rs' (S sl0 ofs0 ty0))
@@ -955,27 +1004,30 @@ Section SINGLE_SWAP_CORRECTNESS.
           inv MAT; eapply match_regular_state; eauto. eapply try_swap_at_tail.
           assert (B1: forall b:bool, (if b then true else false) = false -> b = false). destruct b; auto.
           apply B1 in INDEP. unfold happens_before_ww in INDEP; simpl in INDEP. *)
-          admit.
-        (* Mop D~> Mload *)
+        (* Lop D~> Lload *)
         + admit.
-        (* Mop D~> Mstore *)
+        (* Lop D~> Lstore *)
         + admit.
-      (* Mload D~> i2 *)
-        (* Mload D~> Mgetstack *)
+      (* Lload D~> i2 *)
+        (* Lload D~> Lgetstack *)
         (* + admit. *)
-        (* Mload D~> Mgetparam *)
-        (* Mload D~> Mop *)
+        (* Lload D~> Lgetparam *)
+        (* Lload D~> Lop *)
         + admit.
-        (* Mload D~> Mload *)
+        (* Lload D~> Lload *)
         + admit.
-      (* Mstore D~> i2: *)
-        (* Mstore D~> Mop *)
+        (* Lload D~> Lstore *)
         + admit.
-      (* Mcall D~> i2: trivial & discriminated *)
-      (* Mtailcall D~> i2: trivial & discriminated *)
-      (* Mbuiltin D~> i2: trivial & discriminated *)
-      (* Mgoto D~> i2: trivial & discriminated *)
-      (* Mcond D~> i2: trivial & discriminated*)
+      (* Lstore D~> i2: *)
+        (* Lstore D~> Lop *)
+        + admit.
+        (* Lstore D~> Lload *)
+        + admit.
+      (* Lcall D~> i2: trivial & discriminated *)
+      (* Ltailcall D~> i2: trivial & discriminated *)
+      (* Lbuiltin D~> i2: trivial & discriminated *)
+      (* Lgoto D~> i2: trivial & discriminated *)
+      (* Lcond D~> i2: trivial & discriminated*)
   Admitted.
 
 
