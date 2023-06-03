@@ -1098,7 +1098,29 @@ Section SINGLE_SWAP_CORRECTNESS.
     + admit.
   (* Lstore D~> i2: *)
     (* Lstore D~> Lop *)
-    + admit.
+    + fold mreg_in_list in H3. fold  mreg_list_intersec in H2. set(f'_ := f').
+      inv MAT. inv MEM. rename sp' into sp. rename m' into m.
+      unfold hb_destroy_src in DES, DES0. simpl in DES, DES0.
+      erewrite eval_addressing_irrelevent in H10; eauto.
+      eassert(Hstep12': step tge s1' E0 _). eapply exec_Lop; eauto.
+      unfold ge in H9; erewrite eval_op_genv_irrelevent, eval_op_mem_irrelevant in H9.
+      erewrite <- H9.
+      erewrite not_destroyed_reglist; eauto. erewrite <- lsagree_reglist; eauto. eapply eq_refl.
+      unfold hb_mem in MM; simpl in MM. destruct (mem_read_op op); auto. eapply symbols_preserved.
+      set(s2':= State stk' (try_swap_nth_func n_f f) sp
+                  (Lstore chunk addr args src :: c)
+                  (Locmap.set (R res) v (undef_regs (destroyed_by_op op) rs'))
+                  m).
+      eassert(Hstep23': step tge s2' E0 _). eapply exec_Lstore; eauto.
+      unfold ge in H10; erewrite eval_addr_genv_irrelevent in H10. 
+      erewrite <- H10. instantiate (1:= v). instantiate (1:= tprog). simpl.
+      erewrite <- lsagree_reglist; eauto. eapply lsagree_set, lsagree_undef_regs; eauto.
+      eapply symbols_preserved. erewrite set_different_reg; eauto.
+      erewrite not_destroyed_reg; eauto. erewrite <- lsagree_get; eauto.
+      destruct (mreg_eq res src); auto. inv RW. 
+      eexists _; split. eapply plus_two; eauto. eapply match_regular_state; eauto.
+      eapply try_swap_at_tail. eapply lsagree_symmetric. eapply lsagree_indep_set_destroy; eauto.
+      eapply lsagree_symmetric; eauto. mem_eq.
     (* Lstore D~> Lload *)
     + admit.
   (* Lcall D~> i2: trivial & discriminated *) (* Ltailcall D~> i2: trivial & discriminated *)
