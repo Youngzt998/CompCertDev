@@ -32,7 +32,7 @@ Section TOPO.
     | O, i1 :: i2 :: l' => if rel i1 i2 then l
                             else (i2 :: i1 :: l')
     | Datatypes.S n', i :: l' => i :: try_swap n' l'
-    end. 
+    end.
   
   (* Lemma try_swap_later: 
     forall (n:nat) l a, 0 < n -> try_swap n (a :: l) = a :: try_swap (n-1) l.
@@ -40,19 +40,18 @@ Section TOPO.
 
   Lemma try_swap_nil: forall n, try_swap n [] = [].
   Proof. intros; destruct n; auto. Qed.
+
   Lemma try_swap_singleton: forall n x, try_swap n ([x]) = [x].
   Proof. intros n. induction n; simpl; auto. Qed.
-  
+
   Lemma try_swap_at_tail: forall l, try_swap (length l) l = l.
   Proof.
     assert(try_swap_at_tail_aux: forall l a, 
       try_swap (length (a::l)) (a::l) = a :: try_swap (length l) l ).
-    { intros l. induction l; intros. simpl; auto. rewrite  IHl. 
-      admit. (* TODO not a problem; need to reason about length *) 
-    }
+    { induction l; intros. simpl; auto. simpl. rewrite <- IHl; auto. }
     induction l. simpl; auto.
     rewrite try_swap_at_tail_aux. rewrite IHl; auto.
-  Admitted.
+  Qed.
 
   Lemma try_swap_head_not_change:
     forall n x l l', try_swap n (x :: l) = x :: l' -> 
@@ -472,9 +471,6 @@ Proof.
 Qed.
 
 
-
-
-
 Section FIND_LABEL.
 
 Lemma is_label_inv: forall lbl a, is_label lbl a = true -> a =  Llabel lbl.
@@ -814,11 +810,18 @@ Section SINGLE_SWAP_CORRECTNESS.
 
   Lemma set_different_reg: forall res r rs v,
     res <> r -> Locmap.set (R res) v rs (R r) = rs (R r).
-  Proof.
-    intros. unfold Locmap.set. destruct (Loc.eq (R res) (R r)). inv e; exfalso; auto.
+  Proof. intros. unfold Locmap.set. destruct (Loc.eq (R res) (R r)). inv e; exfalso; auto.
     destruct (Loc.diff_dec (R res) (R r)); auto.
-    exfalso. apply n0; intro. subst. apply n; auto.
-  Qed.
+    exfalso. apply n0; intro. subst. apply n; auto. Qed.
+
+  Lemma set_different_reglist: forall args dst v rs,
+    mreg_in_list dst args = false ->
+      reglist (Locmap.set (R dst) v rs) args = reglist rs args.
+  Proof. induction args; simpl; intros; auto. eapply orb_false_iff in H as [].
+    erewrite IHargs; eauto. unfold Locmap.set. destruct (Loc.eq (R dst) (R a)).
+    inv e. destruct (mreg_eq a a). inv H. exfalso; apply n; auto.
+    destruct (Loc.diff_dec (R dst) (R a)); auto. exfalso; apply n0. simpl; intro; subst.
+    destruct (mreg_eq a a). inv H. exfalso; apply n; auto. Qed.
 
   Lemma destroy_not_influenced: forall destroy a rs, 
     mreg_in_list a destroy = false -> rs (R a) = undef_regs destroy rs (R a).
@@ -886,6 +889,8 @@ Section SINGLE_SWAP_CORRECTNESS.
      reglist (undef_regs destroy rs) args = reglist rs args.
   Proof. induction args; simpl; auto; intros. apply orb_false_iff in H as [].
     erewrite IHargs; eauto. erewrite not_destroyed_reg; eauto. Qed.
+
+
 
   Lemma lsagree_swap_destroy:
     forall r res res0 destroy destroy0 rs rs' v v0,
@@ -1094,11 +1099,11 @@ Section SINGLE_SWAP_CORRECTNESS.
       exists s3'; split. eapply plus_two; eauto. eapply match_regular_state; eauto.
       reflexivity. eapply try_swap_at_tail. unfold hb_destroy_dst in DES1, DES2; simpl in DES1, DES2.
       eapply lsagree_indep_set; eauto. reflexivity.
-    (* Lload D~> Lstore *)
-    + admit.
+  (* Lload D~> Lstore: discriminated because alias analysis is not supported *)
+    + unfold hb_mem in MM; simpl in MM. discriminate MM.
   (* Lstore D~> i2: *)
     (* Lstore D~> Lop *)
-    + fold mreg_in_list in H3. fold  mreg_list_intersec in H2. set(f'_ := f').
+    + fold mreg_in_list in H3. fold mreg_list_intersec in H2. set(f'_ := f').
       inv MAT. inv MEM. rename sp' into sp. rename m' into m.
       unfold hb_destroy_src in DES, DES0. simpl in DES, DES0.
       erewrite eval_addressing_irrelevent in H10; eauto.
@@ -1122,11 +1127,11 @@ Section SINGLE_SWAP_CORRECTNESS.
       eapply try_swap_at_tail. eapply lsagree_symmetric. eapply lsagree_indep_set_destroy; eauto.
       eapply lsagree_symmetric; eauto. mem_eq.
     (* Lstore D~> Lload *)
-    + admit.
+    + unfold hb_mem in MM; simpl in MM. discriminate MM.
   (* Lcall D~> i2: trivial & discriminated *) (* Ltailcall D~> i2: trivial & discriminated *)
   (* Lbuiltin D~> i2: trivial & discriminated *) (* Lgoto D~> i2: trivial & discriminated *)
   (* Lcond D~> i2: trivial & discriminated*)
-  Admitted.
+  Qed.
 
   Definition next_exec (s: state): option instruction :=
     match s with
