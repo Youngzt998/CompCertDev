@@ -939,35 +939,24 @@ Section SINGLE_SWAP_CORRECTNESS.
       repeat apply orb_false_iff in DES as [DES]; rename H1 into DES0;
       rename H0 into DES1; rename H into DES2;
       fold s2_ in Hstep12, Hstep23; fold s3_ in Hstep23.
-      
     (* Lgetstack D~> i2: trivial & discriminated *)
-    (* Msetstack D~> i2: trivial & discriminated *)
-        (* Msetstack D~> Mop *)
-        (* + admit. *)
-    (* Lop D~> i2 *)
-        (* Lop D~> Lgetstack  *) (* Lop D~> Lset  *) (* Lop D~> Lgetparam: discriminated *)
+    (* Msetstack D~> i2: trivial & discriminated *) (* Msetstack D~> Mop *)
+    (* Lop D~> i2 *) (* Lop D~> Lgetstack  *) (* Lop D~> Lset  *) (* Lop D~> Lgetparam: discriminated *)
         (* Lop D~> Lop *)
     + set(f'_ := f'). inv MAT. inv MEM. rename sp' into sp. rename m' into m.
       simpl in RW, WR, WW. unfold hb_ww in WW; simpl in WW. assert(WW_:= WW).
       destruct (mreg_eq res res0) in WW; try discriminate WW.
-      assert(eval_operation ge sp op (LTL.reglist rs args) m
-        = eval_operation ge sp op
-          (LTL.reglist (Locmap.set (R res0) v0 (LTL.undef_regs (destroyed_by_op op0) rs)) args) m
-      ). erewrite eval_args_irrelevent; eauto.
-      assert(eval_operation ge sp op0 (LTL.reglist rs args0) m
-        = eval_operation ge sp op0
-          (LTL.reglist (Locmap.set (R res) v (undef_regs (destroyed_by_op op) rs)) args0) m
-      ). erewrite eval_args_irrelevent; eauto.
-      rewrite H10 in H; symmetry in H. rewrite H9 in H0.
+      erewrite <- eval_args_irrelevent in H9; eauto.
+      erewrite eval_args_irrelevent in H10; eauto.
       set(s2' := State stk' f'_ sp (Lop op args res :: c)
         (Locmap.set (R res0) v0 (undef_regs (destroyed_by_op op0) rs')) m).
-      eassert(Hstep12': step tge s1' E0 s2'). eapply exec_Lop; eauto.
-      unfold ge in H0; erewrite eval_op_genv_irrelevent in H0.
-      erewrite <- lsagree_reglist; eauto. eapply symbols_preserved.
+      eassert(Hstep12': step tge s1' E0 _). eapply exec_Lop; eauto.
+      erewrite <- lsagree_reglist; eauto.
+      unfold ge in H9; erewrite eval_op_genv_irrelevent in H9; eauto; eapply symbols_preserved.
       eassert(Hstep23': step tge s2' E0 _). eapply exec_Lop; eauto.
-      unfold ge in H; erewrite eval_op_genv_irrelevent in H.
-      erewrite <- lsagree_reglist; eauto. eapply lsagree_set, lsagree_undef_regs; eauto.
-      eapply symbols_preserved. 
+      unfold ge in H10; erewrite eval_op_genv_irrelevent in H10.
+      erewrite <- lsagree_reglist; eauto.
+      eapply lsagree_set, lsagree_undef_regs; eauto. eapply symbols_preserved. 
       set(s3' := State stk' f'_ sp c
           (Locmap.set (R res) v
             (undef_regs (destroyed_by_op op)
@@ -986,24 +975,16 @@ Section SINGLE_SWAP_CORRECTNESS.
     + set(f'_ := f'). inv MAT. inv MEM. rename sp' into sp. rename m' into m.
       simpl in RW, WR, WW. unfold hb_ww in WW; simpl in WW. assert(WW_:= WW).
       destruct (mreg_eq dst dst0) in WW; try discriminate WW.
-      assert(eval_addressing ge sp addr (reglist rs args)
-        = eval_addressing ge sp addr
-          (reglist (Locmap.set (R dst0) v0 (undef_regs (destroyed_by_load chunk0 addr0) rs))
-            args)
-      ). erewrite eval_addressing_irrelevent; eauto.
-      assert(eval_addressing ge sp addr0 (reglist rs args0)
-        = eval_addressing ge sp addr0
-          (reglist (Locmap.set (R dst) v (undef_regs (destroyed_by_load chunk addr) rs))
-          args0)
-      ). erewrite eval_addressing_irrelevent; eauto.
-      rewrite H10 in H; symmetry in H. rewrite H9 in H0.
+      erewrite <- eval_addressing_irrelevent in H9; eauto.
+      erewrite eval_addressing_irrelevent in H10; eauto.
       set(s2' := State stk' f'_ sp (Lload chunk addr args dst :: c)
         (Locmap.set (R dst0) v0 (undef_regs (destroyed_by_load chunk0 addr0) rs')) m).
       eassert(Hstep12': step tge s1' E0 s2'). eapply exec_Lload; eauto.
-      unfold ge in H0; erewrite eval_addr_genv_irrelevent in H0.
-      erewrite <- lsagree_reglist; eauto. eapply symbols_preserved.
+      erewrite <- lsagree_reglist; eauto.
+      unfold ge in H9; erewrite eval_addr_genv_irrelevent in H9; eauto.
+      eapply symbols_preserved.
       eassert(Hstep23': step tge s2' E0 _). eapply exec_Lload; eauto.
-      unfold ge in H; erewrite eval_addr_genv_irrelevent in H.
+      unfold ge in H10; erewrite eval_addr_genv_irrelevent in H10.
       erewrite <- lsagree_reglist; eauto.
       eapply lsagree_set, lsagree_undef_regs; eauto. eapply symbols_preserved. 
       set(s3' := State stk' f'_ sp c
@@ -1273,7 +1254,6 @@ Proof.
   intros. eapply forward_simulation_safe_swap.
   eapply transf_program_match; eauto.
 Qed.
-
 
 
 Section Multi_SWAP_CORRECTNESS.
