@@ -136,6 +136,54 @@ Section SIMULATION_SEQUENCE.
 
 End SIMULATION_SEQUENCE.
 
+
+(* TODO Warning: simple but machine dependent;
+      Try to make codes the same *)
+Section MACHINE_DEPENDENT_X86.
+
+  Lemma eval_op_genv_irrelevent: forall prog tprog: program,
+    let ge := Genv.globalenv prog in
+    let tge := Genv.globalenv tprog in
+      forall sp op lv m 
+      (SYMB: forall s, Genv.find_symbol tge s = Genv.find_symbol ge s),
+        eval_operation ge sp op lv m = eval_operation tge sp op lv m.
+  Proof.
+    intros. destruct lv; auto. destruct op; simpl; auto.
+    unfold Genv.symbol_address. rewrite SYMB; auto.
+    unfold eval_addressing64. destruct Archi.ptr64; auto.
+    destruct a; auto. unfold Genv.symbol_address. rewrite SYMB; auto.
+  Qed.
+
+  Lemma eval_addr_genv_irrelevent: forall prog tprog: program,
+  let ge := Genv.globalenv prog in
+  let tge := Genv.globalenv tprog in
+    forall sp addr lv
+    (SYMB: forall s, Genv.find_symbol tge s = Genv.find_symbol ge s),
+    eval_addressing ge sp addr lv = eval_addressing tge sp addr lv.
+  Proof.
+    intros. destruct lv; auto. destruct addr; simpl; auto.
+    unfold eval_addressing. unfold eval_addressing64. destruct Archi.ptr64; auto. 
+    unfold Genv.symbol_address. rewrite SYMB; auto.
+  Qed.
+
+
+  Definition mem_read_op (op: operation) :=
+    match op with
+    | Ocmp _   => true
+    | Osel _ _ => true  (* riscv does not have this op; compatible for x86, arm, powerpc, aarch64 *)
+    | _ => false
+    end.
+
+  Lemma eval_op_mem_irrelevant: forall prog: program,
+  let ge := Genv.globalenv prog in
+    forall op sp rs m1 m2, mem_read_op op = false ->
+      eval_operation ge sp op rs m1 = eval_operation ge sp op rs m2.
+  Proof. intros. destruct op; auto; simpl in H; discriminate H. Qed. 
+
+End MACHINE_DEPENDENT_X86.
+
+
+
 Definition mreg_eqb: mreg -> mreg -> bool.
 Proof. boolean_equality. Defined.
 
@@ -180,7 +228,7 @@ Definition mem_write (i: instruction): option bool :=
   match i with
   | Lgetstack _ _ _ _ => Some false
   | Lsetstack _ _ _ _ => Some false
-  (* will be true in Mach IR *)
+  | Lop op _ _ => if mem_read_op op then Some false else None
   | Lload _ _ _ dst => Some false
   | Lstore _ _ _ src => Some true
   | _ => None
@@ -424,36 +472,7 @@ Proof.
 Qed.
 
 
-(* TODO Warning: simple but machine dependent;
-      Try to make codes the same *)
-Section MACHINE_DEPENDENT_X86.
 
-  Lemma eval_op_genv_irrelevent: forall prog tprog: program,
-    let ge := Genv.globalenv prog in
-    let tge := Genv.globalenv tprog in
-      forall sp op lv m 
-      (SYMB: forall s, Genv.find_symbol tge s = Genv.find_symbol ge s),
-        eval_operation ge sp op lv m = eval_operation tge sp op lv m.
-  Proof.
-    intros. destruct lv; auto. destruct op; simpl; auto.
-    unfold Genv.symbol_address. rewrite SYMB; auto.
-    unfold eval_addressing64. destruct Archi.ptr64; auto.
-    destruct a; auto. unfold Genv.symbol_address. rewrite SYMB; auto.
-  Qed.
-
-  Lemma eval_addr_genv_irrelevent: forall prog tprog: program,
-  let ge := Genv.globalenv prog in
-  let tge := Genv.globalenv tprog in
-    forall sp addr lv
-    (SYMB: forall s, Genv.find_symbol tge s = Genv.find_symbol ge s),
-    eval_addressing ge sp addr lv = eval_addressing tge sp addr lv.
-  Proof.
-    intros. destruct lv; auto. destruct addr; simpl; auto.
-    unfold eval_addressing. unfold eval_addressing64. destruct Archi.ptr64; auto. 
-    unfold Genv.symbol_address. rewrite SYMB; auto.
-  Qed.
-
-End MACHINE_DEPENDENT_X86.
 
 
 Section FIND_LABEL.
@@ -793,6 +812,14 @@ Section SINGLE_SWAP_CORRECTNESS.
 
   (** Case 2: Swapped 2 consecutive steps **)
 
+  Lemma set_different_reg: forall res r rs v,
+    res <> r -> Locmap.set (R res) v rs (R r) = rs (R r).
+  Proof.
+    intros. unfold Locmap.set. destruct (Loc.eq (R res) (R r)). inv e; exfalso; auto.
+    destruct (Loc.diff_dec (R res) (R r)); auto.
+    exfalso. apply n0; intro. subst. apply n; auto.
+  Qed.
+
   Lemma destroy_not_influenced: forall destroy a rs, 
     mreg_in_list a destroy = false -> rs (R a) = undef_regs destroy rs (R a).
   Proof.
@@ -854,6 +881,12 @@ Section SINGLE_SWAP_CORRECTNESS.
     (undef_regs destroy rs) (S sl z ty) = rs (S sl z ty).
   Proof. intro; induction destroy; simpl; auto. Qed.
 
+  Lemma not_destroyed_reglist: forall args destroy rs,
+    mreg_list_intersec args destroy = false ->
+     reglist (undef_regs destroy rs) args = reglist rs args.
+  Proof. induction args; simpl; auto; intros. apply orb_false_iff in H as [].
+    erewrite IHargs; eauto. erewrite not_destroyed_reg; eauto. Qed.
+
   Lemma lsagree_swap_destroy:
     forall r res res0 destroy destroy0 rs rs' v v0,
     lsagree rs rs' -> R res <> r -> R res0 <> r ->
@@ -869,7 +902,6 @@ Section SINGLE_SWAP_CORRECTNESS.
                     then undef_regs destroy0 rs' p else Vundef) r.
   Proof.
     intros r res res0. destruct r. 
-    (* TODO: should not use induction *)
     { intros. remember (mreg_in_list r destroy0) as b1. remember (mreg_in_list r destroy) as b2.
       destruct b1; destruct b2; symmetry in Heqb1; symmetry in Heqb2.
       - erewrite! destroyed_reg; eauto.
@@ -915,6 +947,30 @@ Section SINGLE_SWAP_CORRECTNESS.
       destruct (Loc.diff_dec (R res) r).
       2:{ destruct r. simpl in n1. exfalso; apply n1; intro; subst; auto. simpl in n1; exfalso; auto. }
       eapply lsagree_swap_destroy; eauto. }
+  Qed.
+
+  Lemma lsagree_indep_set_destroy: forall rs rs' res v destroy destroy0,
+  mreg_in_list res destroy0 = false ->
+  lsagree rs rs' ->
+  lsagree
+    (undef_regs destroy0 (Locmap.set (R res) v (undef_regs destroy rs)))
+    (Locmap.set (R res) v (undef_regs destroy (undef_regs destroy0 rs'))).
+  Proof.
+    intros. intro. unfold Locmap.get. unfold Locmap.set. destruct (Loc.eq (R res) r).
+    { subst. erewrite not_destroyed_reg; eauto. destruct (Loc.eq (R res) (R res)); auto.
+      exfalso. apply n; auto. }
+    { destruct r.
+      { remember (mreg_in_list r destroy0) as b1. remember (mreg_in_list r destroy) as b2.
+        destruct b1; destruct b2; symmetry in Heqb1; symmetry in Heqb2.
+        - erewrite! destroyed_reg; eauto. destruct (Loc.diff_dec (R res) (R r) ); eauto.
+        - erewrite destroyed_reg; eauto. erewrite not_destroyed_reg; eauto.
+          erewrite destroyed_reg; eauto. destruct (Loc.diff_dec (R res) (R r) ); eauto.
+        - erewrite not_destroyed_reg; eauto.  erewrite destroyed_reg; eauto.
+          erewrite destroyed_reg; eauto. destruct (Loc.eq (R res) (R r)); eauto.
+          inv e; exfalso; apply n; auto.
+        - erewrite! not_destroyed_reg; eauto. destruct (Loc.eq (R res) (R r)); eauto.
+          inv e; exfalso; apply n; auto. destruct (Loc.diff_dec (R res) (R r)); eauto. }
+      erewrite! not_destroyed_slot; eauto. simpl. apply H0. }
   Qed.
 
   Lemma independent_two_step_match:
@@ -975,9 +1031,28 @@ Section SINGLE_SWAP_CORRECTNESS.
       eapply try_swap_at_tail. unfold hb_destroy_dst in DES1, DES2; simpl in DES1, DES2.
       eapply lsagree_indep_set; eauto. mem_eq.
     (* Lop D~> Lstore *)
-    + admit.
+    + fold mreg_in_list in WR. rename WR into RW'. set(f'_ := f').
+      inv MAT. inv MEM. rename sp' into sp. rename m' into m.
+      unfold hb_destroy_src in DES, DES0. simpl in DES, DES0. eapply orb_false_iff in DES0 as [D0 D0'].
+      erewrite <- eval_addressing_irrelevent in H9; eauto.
+      eassert(Hstep12': step tge s1' E0 _). eapply exec_Lstore; eauto.
+      erewrite <- lsagree_reglist; eauto.
+      unfold ge in H9; erewrite eval_addr_genv_irrelevent in H9; eauto; eapply symbols_preserved.
+      erewrite <- H11. erewrite set_different_reg.
+      erewrite not_destroyed_reg; eauto. erewrite <- lsagree_get; eauto.
+      destruct (mreg_eq res src); auto. inv RW.
+      set(s2':= State stk' (try_swap_nth_func n_f f) sp
+                  (Lop op args res :: c)
+                    (undef_regs (destroyed_by_store chunk addr) rs') m'0).
+      eassert(Hstep23': step tge s2' E0 _). eapply exec_Lop; eauto.
+      unfold ge in H10; erewrite eval_op_genv_irrelevent, eval_op_mem_irrelevant in H10.
+      erewrite not_destroyed_reglist. erewrite <- lsagree_reglist; eauto. eauto.
+      unfold hb_mem in MM; simpl in MM. destruct (mem_read_op op); auto. eapply symbols_preserved.
+      eexists _; split. eapply plus_two; eauto. eapply match_regular_state; eauto.
+      eapply try_swap_at_tail. eapply lsagree_indep_set_destroy; eauto. mem_eq.
   (* Lload D~> i2 *)
-    (* Lload D~> Lgetstack *)  (* Lload D~> Lgetparam *) (* Lload D~> Lop *)
+    (* Lload D~> Lgetstack *)  (* Lload D~> Lgetparam *)
+    (* Lload D~> Lop *)
     + admit.
     (* Lload D~> Lload *)
     + set(f'_ := f'). inv MAT. inv MEM. rename sp' into sp. rename m' into m.
