@@ -196,7 +196,9 @@ Definition get_dst (i: instruction): option mreg :=
 Definition get_srcs (i: instruction): list mreg :=
   match i with
   | Lop op args res => args
-  | Lsetstack src _ _ _  | Lstore _ _ _ src => src::nil
+  | Lload _ _ args _ => args
+  | Lsetstack src _ _ _   => src :: nil
+  | Lstore _ _ args src => src::args
   | _ => nil
   end.
 
@@ -261,13 +263,11 @@ Definition happens_before (i1 i2: instruction): bool :=
     solid_inst i1
     || solid_inst i2
     (* register dependence *)
-    || hb_rw i1 i2
-    || hb_rw i2 i1
-    || hb_ww i1 i2
+    || hb_rw i1 i2 || hb_rw i2 i1 || hb_ww i1 i2
     (* memory dependence without alias information 
         - any two memory access with at least write are regarded to have dependence *)
     || hb_mem i1 i2
-    (* no dependence *)
+    (* destroyed registers during each step *)
     || hb_destroy i1 i2.
 
 Notation "i1 D~> i2":= (happens_before i1 i2) (at level 1).
@@ -421,30 +421,39 @@ Proof.
   - eapply extcall_annot_ok; eauto. - eapply extcall_annot_val_ok; eauto.
   - eapply inline_assembly_properties; eauto.
   - eapply extcall_debug_ok; eauto.
-Qed. 
-
-
-
-
-(* TODO Warning: simple but machine dependent *)
-Section MACHINE_DEPENDENT_X86.
-
-Lemma eval_op_genv_irrelevent: forall prog tprog: program,
-  let ge := Genv.globalenv prog in let tge := Genv.globalenv tprog in
-    forall sp op lv m 
-    (SYMB: forall s, Genv.find_symbol tge s = Genv.find_symbol ge s),
-      eval_operation ge sp op lv m = eval_operation tge sp op lv m.
-Proof.
-  intros. destruct lv; auto. destruct op; simpl; auto.
-  unfold Genv.symbol_address. rewrite SYMB; auto.
-  unfold eval_addressing64. destruct Archi.ptr64; auto.
-  destruct a; auto. unfold Genv.symbol_address. rewrite SYMB; auto.
 Qed.
 
+
+(* TODO Warning: simple but machine dependent;
+      Try to make codes the same *)
+Section MACHINE_DEPENDENT_X86.
+
+  Lemma eval_op_genv_irrelevent: forall prog tprog: program,
+    let ge := Genv.globalenv prog in
+    let tge := Genv.globalenv tprog in
+      forall sp op lv m 
+      (SYMB: forall s, Genv.find_symbol tge s = Genv.find_symbol ge s),
+        eval_operation ge sp op lv m = eval_operation tge sp op lv m.
+  Proof.
+    intros. destruct lv; auto. destruct op; simpl; auto.
+    unfold Genv.symbol_address. rewrite SYMB; auto.
+    unfold eval_addressing64. destruct Archi.ptr64; auto.
+    destruct a; auto. unfold Genv.symbol_address. rewrite SYMB; auto.
+  Qed.
+
+  Lemma eval_addr_genv_irrelevent: forall prog tprog: program,
+  let ge := Genv.globalenv prog in
+  let tge := Genv.globalenv tprog in
+    forall sp addr lv
+    (SYMB: forall s, Genv.find_symbol tge s = Genv.find_symbol ge s),
+    eval_addressing ge sp addr lv = eval_addressing tge sp addr lv.
+  Proof.
+    intros. destruct lv; auto. destruct addr; simpl; auto.
+    unfold eval_addressing. unfold eval_addressing64. destruct Archi.ptr64; auto. 
+    unfold Genv.symbol_address. rewrite SYMB; auto.
+  Qed.
+
 End MACHINE_DEPENDENT_X86.
-
-
-
 
 
 Section FIND_LABEL.
@@ -487,50 +496,49 @@ End FIND_LABEL.
 
 
 Lemma Linear_determ: forall p, determinate (Linear.semantics p).
-  Proof. 
-    constructor.
-    - intros. inv H; inv H0.
-      + split. eapply match_traces_E0. intros; auto.
-      + split. eapply match_traces_E0. intros; auto.
-      + split. eapply match_traces_E0. intros; auto. rewrite H12 in H1; inv H1; auto.
-      + split. eapply match_traces_E0. intros; auto. 
-        rewrite H14 in H1; inv H1. rewrite H15 in H2; inv H2; auto.
-      + split. eapply match_traces_E0. intros; auto. 
-        rewrite H14 in H1; inv H1; auto. rewrite H15 in H2; inv H2; auto.
-      + split. eapply match_traces_E0. intros; auto. rewrite H11 in H1; inv H1; auto.
-      + split. eapply match_traces_E0. intros; auto.
-        rewrite H13 in H2; inv H2. rewrite H15 in H4; inv H4; auto.
-      + eapply eval_builtin_args_determ in H1. 2: { eapply H13. } subst.
-        split. eapply external_call_match_traces; eauto.
-        intros. subst. eapply external_call_deterministic in H2. 2:{ eapply H14. }
-        destruct H2; subst; auto.
-      + split. eapply match_traces_E0. intros; auto.
-      + split. eapply match_traces_E0. intros; auto. rewrite H10 in H1; inv H1; auto.
-      + split. eapply match_traces_E0. intros; auto. rewrite H15 in H3; inv H3; auto.
-      + rewrite H13 in H1; inv H1. 
-      + rewrite H12 in H1; inv H1.
-      + split. eapply match_traces_E0. intros; auto.
-      + split. eapply match_traces_E0. intros; auto. rewrite H13 in H1; inv H1; auto.
-        rewrite H14 in H2; inv H2; auto. rewrite H15 in H3; inv H3; auto.
-      + split. eapply match_traces_E0. intros; auto. rewrite H9 in H1; inv H1; auto.
-      + split. eapply match_traces_E0. intros; auto. rewrite H7 in H1; inv H1; auto.
-      + split. eapply external_call_match_traces; eauto.
-        intros; subst. eapply external_call_deterministic in H2. 2:{ eapply H8. }
-        destruct H2; subst; auto.
-      + split. eapply match_traces_E0. intros; auto.
-    - hnf. intros. inv H; auto.
-      eapply ec_trace_length. eapply external_call_spec. eauto.
-      eapply ec_trace_length. eapply external_call_spec. eauto.
-    - intros. inv H. inv H0. rewrite H1 in H. inv H.
-      unfold ge in H2, H3. unfold ge0 in H5, H6.
-      rewrite H5 in H2; inv H2; auto.
-      rewrite H6 in H3; inv H3; auto.
-    - intros. hnf. intros. intro. inv H. inv H0. 
-    - intros. inv H; inv H0. rewrite H1 in H4. inv H4; auto.
-  Qed.
+Proof. 
+  constructor.
+  - intros. inv H; inv H0.
+    + split. eapply match_traces_E0. intros; auto.
+    + split. eapply match_traces_E0. intros; auto.
+    + split. eapply match_traces_E0. intros; auto. rewrite H12 in H1; inv H1; auto.
+    + split. eapply match_traces_E0. intros; auto. 
+      rewrite H14 in H1; inv H1. rewrite H15 in H2; inv H2; auto.
+    + split. eapply match_traces_E0. intros; auto. 
+      rewrite H14 in H1; inv H1; auto. rewrite H15 in H2; inv H2; auto.
+    + split. eapply match_traces_E0. intros; auto. rewrite H11 in H1; inv H1; auto.
+    + split. eapply match_traces_E0. intros; auto.
+      rewrite H13 in H2; inv H2. rewrite H15 in H4; inv H4; auto.
+    + eapply eval_builtin_args_determ in H1. 2: { eapply H13. } subst.
+      split. eapply external_call_match_traces; eauto.
+      intros. subst. eapply external_call_deterministic in H2. 2:{ eapply H14. }
+      destruct H2; subst; auto.
+    + split. eapply match_traces_E0. intros; auto.
+    + split. eapply match_traces_E0. intros; auto. rewrite H10 in H1; inv H1; auto.
+    + split. eapply match_traces_E0. intros; auto. rewrite H15 in H3; inv H3; auto.
+    + rewrite H13 in H1; inv H1. 
+    + rewrite H12 in H1; inv H1.
+    + split. eapply match_traces_E0. intros; auto.
+    + split. eapply match_traces_E0. intros; auto. rewrite H13 in H1; inv H1; auto.
+      rewrite H14 in H2; inv H2; auto. rewrite H15 in H3; inv H3; auto.
+    + split. eapply match_traces_E0. intros; auto. rewrite H9 in H1; inv H1; auto.
+    + split. eapply match_traces_E0. intros; auto. rewrite H7 in H1; inv H1; auto.
+    + split. eapply external_call_match_traces; eauto.
+      intros; subst. eapply external_call_deterministic in H2. 2:{ eapply H8. }
+      destruct H2; subst; auto.
+    + split. eapply match_traces_E0. intros; auto.
+  - hnf. intros. inv H; auto.
+    eapply ec_trace_length. eapply external_call_spec. eauto.
+    eapply ec_trace_length. eapply external_call_spec. eauto.
+  - intros. inv H. inv H0. rewrite H1 in H. inv H.
+    unfold ge in H2, H3. unfold ge0 in H5, H6.
+    rewrite H5 in H2; inv H2; auto.
+    rewrite H6 in H3; inv H3; auto.
+  - intros. hnf. intros. intro. inv H. inv H0. 
+  - intros. inv H; inv H0. rewrite H1 in H4. inv H4; auto.
+Qed.
 
 
-  
 Definition transf_function_try_swap_nth (n: nat) (f: function) : res function :=
   OK (try_swap_nth_func n f).
 
@@ -590,6 +598,8 @@ Inductive match_stackframe: stackframe -> stackframe -> Prop :=
 
 Definition match_stack := Forall2 match_stackframe.
 
+(* Note: use eq because we do not exploit alias analysis now;
+    otherwise, two consecutive store can be swapped *)
 Definition match_mem (m m': mem) := eq m m'.
 Ltac mem_eq := apply eq_refl.
 
@@ -617,8 +627,7 @@ Inductive match_states: state -> state -> Prop :=
     (RS: lsagree rs rs') 
     (MEM: match_mem m m'),
     match_states (Returnstate sl rs m)
-                 (Returnstate sl' rs' m')
-.
+                 (Returnstate sl' rs' m').
 
 (** Correctness proof of general correctness of instruction scheduling algorithm*)
 
@@ -683,8 +692,6 @@ Section SINGLE_SWAP_CORRECTNESS.
       discriminate H.
   Qed.
 
-
-
   Lemma exec_one_inst: forall ge sl1 f1 sp1 i1 c rs1 m1 t s2,
   step ge (State sl1 f1 sp1 (i1 :: c) rs1 m1) t s2 -> 
   solid_inst i1 = false ->
@@ -695,6 +702,8 @@ Section SINGLE_SWAP_CORRECTNESS.
   Lemma try_swap_code_singleton: forall n i, try_swap_code n [i] = [i].
   Proof. apply try_swap_singleton. Qed.
 
+
+  (** Case 1: Regular step without swapping **)
   Lemma regular_state_one_step_match:
   forall stk1 stk1' fb fb' sp sp' c c' rs1 rs1' m1 m1' s2 i t
   (s1:= State stk1 fb sp (i :: c) rs1 m1) 
@@ -782,24 +791,7 @@ Section SINGLE_SWAP_CORRECTNESS.
   Qed.
 
 
-
-  (* Lemma lsagree_independent_write:
-
-    lsagree
-    (Locmap.set (R dst0)
-       (Locmap.set (R dst) (rs (S sl ofs ty))
-          (LTL.undef_regs (LTL.destroyed_by_getstack sl) rs) 
-          (S sl0 ofs0 ty0))
-       (LTL.undef_regs (LTL.destroyed_by_getstack sl0)
-          (Locmap.set (R dst) (rs (S sl ofs ty))
-             (LTL.undef_regs (LTL.destroyed_by_getstack sl) rs))))
-    (Locmap.set (R dst)
-       (Locmap.set (R dst0) (rs' (S sl0 ofs0 ty0))
-          (LTL.undef_regs (LTL.destroyed_by_getstack sl0) rs') 
-          (S sl ofs ty))
-       (LTL.undef_regs (LTL.destroyed_by_getstack sl)
-          (Locmap.set (R dst0) (rs' (S sl0 ofs0 ty0))
-             (LTL.undef_regs (LTL.destroyed_by_getstack sl0) rs')))) *)
+  (** Case 2: Swapped 2 consecutive steps **)
 
   Lemma destroy_not_influenced: forall destroy a rs, 
     mreg_in_list a destroy = false -> rs (R a) = undef_regs destroy rs (R a).
@@ -812,15 +804,14 @@ Section SINGLE_SWAP_CORRECTNESS.
     exfalso. apply n0. simpl. intro; subst. apply n; auto.
   Qed. 
 
-
   Lemma eval_args_irrelevent: forall args rs res0 v0 destroy,
     mreg_in_list res0 args = false ->
     mreg_list_intersec args destroy = false ->
-    LTL.reglist rs args
-    = (LTL.reglist (Locmap.set (R res0) v0 (LTL.undef_regs destroy rs)) args).
+      LTL.reglist rs args =
+      (LTL.reglist (Locmap.set (R res0) v0 (LTL.undef_regs destroy rs)) args).
   Proof.
     intro. induction args; auto. intros. simpl in H, H0.
-    rewrite orb_false_iff in H, H0. destruct H, H0. auto. simpl.
+    rewrite orb_false_iff in H, H0. destruct H, H0. simpl.
     rewrite <- IHargs; auto.
     assert( a <> res0 ). simpl in H. destruct mreg_eq. discriminate H. auto.
     assert(rs (R a) = Locmap.set (R res0) v0 (LTL.undef_regs destroy rs) (R a)).
@@ -830,19 +821,13 @@ Section SINGLE_SWAP_CORRECTNESS.
     rewrite H4; auto.
   Qed.
 
-  Lemma eval_op_irrelevent: forall (prog: program) sp op rs args m op0 res0 v0,
-  let ge := Genv.globalenv prog in  
+  Lemma eval_addressing_irrelevent: forall addr args sp rs res0  v0 destroy,
     mreg_in_list res0 args = false ->
-    mreg_list_intersec args (destroyed_by_op op0) = false ->
-    eval_operation ge sp op (LTL.reglist rs args) m 
-    = eval_operation ge sp op
-      (LTL.reglist
-          (Locmap.set (R res0) v0
-            (LTL.undef_regs (destroyed_by_op op0) rs))
-          args) m.
-  Proof. intros.
-    erewrite <- eval_args_irrelevent; auto.
-  Qed.
+    mreg_list_intersec args destroy = false ->
+      eval_addressing ge sp addr (reglist rs args) =
+      eval_addressing ge sp addr
+        (reglist (Locmap.set (R res0) v0 (undef_regs destroy rs)) args).
+  Proof. intros. erewrite <- eval_args_irrelevent; eauto. Qed.
 
   Lemma not_destroyed_reg: forall destroy rs r,
     mreg_in_list r destroy = false ->
@@ -998,7 +983,38 @@ Section SINGLE_SWAP_CORRECTNESS.
     (* Lload D~> Lgetstack *)  (* Lload D~> Lgetparam *) (* Lload D~> Lop *)
     + admit.
     (* Lload D~> Lload *)
-    + admit.
+    + set(f'_ := f'). inv MAT. inv MEM. rename sp' into sp. rename m' into m.
+      simpl in RW, WR, WW. unfold hb_ww in WW; simpl in WW. assert(WW_:= WW).
+      destruct (mreg_eq dst dst0) in WW; try discriminate WW.
+      assert(eval_addressing ge sp addr (reglist rs args)
+        = eval_addressing ge sp addr
+          (reglist (Locmap.set (R dst0) v0 (undef_regs (destroyed_by_load chunk0 addr0) rs))
+            args)
+      ). erewrite eval_addressing_irrelevent; eauto.
+      assert(eval_addressing ge sp addr0 (reglist rs args0)
+        = eval_addressing ge sp addr0
+          (reglist (Locmap.set (R dst) v (undef_regs (destroyed_by_load chunk addr) rs))
+          args0)
+      ). erewrite eval_addressing_irrelevent; eauto.
+      rewrite H10 in H; symmetry in H. rewrite H9 in H0.
+      set(s2' := State stk' f'_ sp (Lload chunk addr args dst :: c)
+        (Locmap.set (R dst0) v0 (undef_regs (destroyed_by_load chunk0 addr0) rs')) m).
+      eassert(Hstep12': step tge s1' E0 s2'). eapply exec_Lload; eauto.
+      unfold ge in H0; erewrite eval_addr_genv_irrelevent in H0.
+      erewrite <- lsagree_reglist; eauto. eapply symbols_preserved.
+      eassert(Hstep23': step tge s2' E0 _). eapply exec_Lload; eauto.
+      unfold ge in H; erewrite eval_addr_genv_irrelevent in H.
+      erewrite <- lsagree_reglist; eauto.
+      eapply lsagree_set, lsagree_undef_regs; eauto. eapply symbols_preserved. 
+      set(s3' := State stk' f'_ sp c
+            (Locmap.set (R dst) v
+              (undef_regs (destroyed_by_load chunk addr)
+                  (Locmap.set (R dst0) v0
+                    (undef_regs (destroyed_by_load chunk0 addr0)
+                        rs')))) m ).
+      exists s3'; split. eapply plus_two; eauto. eapply match_regular_state; eauto.
+      reflexivity. eapply try_swap_at_tail. unfold hb_destroy_dst in DES1, DES2; simpl in DES1, DES2.
+      eapply lsagree_indep_set; eauto. reflexivity.
     (* Lload D~> Lstore *)
     + admit.
   (* Lstore D~> i2: *)
@@ -1227,7 +1243,8 @@ Section SINGLE_SWAP_CORRECTNESS.
     match_states_aux b st1 st2 -> final_state st1 r -> final_state st2 r.
   Proof.
     intros. inv H.
-    - (* match now *) eapply transf_final_states0; eauto.
+    - (* match now *)
+      eapply transf_final_states0; eauto.
     - (* match before, not possible *)
       inv H0. inv H3; simpl in H1; inv H1; discriminate H2.
   Qed.
@@ -1245,6 +1262,7 @@ Section SINGLE_SWAP_CORRECTNESS.
   Qed.
 
 End SINGLE_SWAP_CORRECTNESS.
+
 
 Lemma transf_program_forward_simulation:
 forall funid n prog tprog, 
