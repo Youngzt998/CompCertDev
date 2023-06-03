@@ -1053,7 +1053,21 @@ Section SINGLE_SWAP_CORRECTNESS.
   (* Lload D~> i2 *)
     (* Lload D~> Lgetstack *)  (* Lload D~> Lgetparam *)
     (* Lload D~> Lop *)
-    + admit.
+    + set(f'_ := f'). inv MAT. inv MEM. rename sp' into sp. rename m' into m.
+      simpl in RW, WR, WW. unfold hb_ww in WW; simpl in WW. assert(WW_:= WW).
+      unfold hb_rw, hb_wr in RW; simpl in RW. destruct (mreg_eq dst res) in WW; try discriminate WW.
+      erewrite <- eval_args_irrelevent in H9; eauto.
+      erewrite eval_addressing_irrelevent in H10; eauto.
+      eassert(Hstep12': step tge s1' E0 _). eapply exec_Lop; eauto.
+      erewrite <- lsagree_reglist; eauto.
+      unfold ge in H9; erewrite eval_op_genv_irrelevent in H9; eauto; eapply symbols_preserved.
+      eassert(Hstep23': step tge _ E0 _). eapply exec_Lload; eauto.
+      unfold ge in H10; erewrite eval_addr_genv_irrelevent in H10.
+      erewrite <- lsagree_reglist; eauto.
+      eapply lsagree_set, lsagree_undef_regs; eauto. eapply symbols_preserved.
+      eexists _; split. eapply plus_two; eauto. eapply match_regular_state; eauto.
+      eapply try_swap_at_tail. unfold hb_destroy_dst in DES1, DES2; simpl in DES1, DES2.
+      eapply lsagree_indep_set; eauto. mem_eq.
     (* Lload D~> Lload *)
     + set(f'_ := f'). inv MAT. inv MEM. rename sp' into sp. rename m' into m.
       simpl in RW, WR, WW. unfold hb_ww in WW; simpl in WW. assert(WW_:= WW).
