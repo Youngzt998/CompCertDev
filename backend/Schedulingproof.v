@@ -136,14 +136,27 @@ Section SIMULATION_SEQUENCE.
 
 End SIMULATION_SEQUENCE.
 
+Definition mreg_eqb: mreg -> mreg -> bool.
+Proof. boolean_equality. Defined.
+
+Lemma mreg_eqb_refl: forall x, mreg_eqb x x = true.
+Proof. intros. destruct x; simpl; auto. Qed.
+
+Lemma mreg_eqb_eq: forall x y, mreg_eqb x y = true -> x = y.
+Proof. BE.bool_eq_sound. Qed.
+
+Lemma mreg_eqb_eq_iff: forall x y, mreg_eqb x y = true <-> x = y.
+Proof. split. apply mreg_eqb_eq. intros; subst. apply mreg_eqb_refl. Qed.
+
+
 (** [i1: reg = ...] :: [i2: ... = op args] :: [...] *)
-Fixpoint mreg_in_list (reg: mreg) (regs: list mreg) :=
+Fixpoint mreg_in_list (reg: mreg) (regs: list mreg): bool :=
   match regs with
   | nil => false
   | reg' :: regs' => mreg_eq reg reg' || mreg_in_list reg regs'
   end.
 
-Fixpoint mreg_list_intersec (regs1 regs2: list mreg) :=
+Fixpoint mreg_list_intersec (regs1 regs2: list mreg): bool :=
   match regs1 with
   | nil => false
   | reg1 :: regs1' => mreg_in_list reg1 regs2 || mreg_list_intersec regs1' regs2  
@@ -201,18 +214,18 @@ Definition destroyed_by (i: instruction):=
   end.
 
 (* RAW/True-dependence: i1 write register r, then i2 read from [..., r, ...]  *)
-Definition happens_before_wr (i1 i2: instruction):=
+Definition hb_wr (i1 i2: instruction):=
     match get_dst i1, get_srcs i2 with 
     | Some dst, srcs  => mreg_in_list dst srcs
     | _, _ => false
     end.
 
 (* WAR/Anti-dependence: i1 read from [..., r, ...], then i2 write register r,  *)
-Definition happens_before_rw (i1 i2: instruction) :=
-  happens_before_wr i2 i1.
+Definition hb_rw (i1 i2: instruction) :=
+  hb_wr i2 i1.
 
 (* WAW/Output-dependence: i1 write register r, then i2 write register r*)
-Definition happens_before_ww (i1 i2: instruction) :=
+Definition hb_ww (i1 i2: instruction) :=
     match get_dst i1, get_dst i2 with 
     | Some dst1, Some dst2 =>
         if mreg_eq dst1 dst2 then true else false
@@ -221,26 +234,26 @@ Definition happens_before_ww (i1 i2: instruction) :=
 
 (* Mem dependence: one of i1 and i2 write to memory, another also read/write memory *)
 (* always a dependence since no alias analysis performed *)
-Definition happens_before_mem (i1 i2: instruction):=
+Definition hb_mem (i1 i2: instruction):=
     match mem_write i1, mem_write i2 with
     | Some true, Some _ | Some _, Some true => true 
     | _, _ => false
     end.
 
-Definition happens_before_destroy_src (i1 i2: instruction) :=
+Definition hb_destroy_src (i1 i2: instruction) :=
   mreg_list_intersec (get_srcs i1) (destroyed_by i2).
   
-Definition happens_before_destroy_dst (i1 i2: instruction) :=
+Definition hb_destroy_dst (i1 i2: instruction) :=
   match get_dst i1 with
   | Some dst => mreg_in_list dst (destroyed_by i2)
   | None => false
   end.
 
-Definition happens_before_destroy (i1 i2: instruction) :=
-  happens_before_destroy_src i1 i2
-  || happens_before_destroy_src i2 i1
-  || happens_before_destroy_dst i1 i2
-  || happens_before_destroy_dst i2 i1.
+Definition hb_destroy (i1 i2: instruction) :=
+  hb_destroy_src i1 i2
+  || hb_destroy_src i2 i1
+  || hb_destroy_dst i1 i2
+  || hb_destroy_dst i2 i1.
 
 (* i1 i2 have dependence, order irrelevent *)
 Definition happens_before (i1 i2: instruction): bool :=
@@ -248,14 +261,14 @@ Definition happens_before (i1 i2: instruction): bool :=
     solid_inst i1
     || solid_inst i2
     (* register dependence *)
-    || happens_before_rw i1 i2
-    || happens_before_rw i2 i1
-    || happens_before_ww i1 i2
+    || hb_rw i1 i2
+    || hb_rw i2 i1
+    || hb_ww i1 i2
     (* memory dependence without alias information 
         - any two memory access with at least write are regarded to have dependence *)
-    || happens_before_mem i1 i2
+    || hb_mem i1 i2
     (* no dependence *)
-    || happens_before_destroy i1 i2.
+    || hb_destroy i1 i2.
 
 Notation "i1 D~> i2":= (happens_before i1 i2) (at level 1).
 
@@ -831,8 +844,93 @@ Section SINGLE_SWAP_CORRECTNESS.
     erewrite <- eval_args_irrelevent; auto.
   Qed.
 
-  
+  Lemma not_destroyed_reg: forall destroy rs r,
+    mreg_in_list r destroy = false ->
+    (undef_regs destroy rs) (R r) = rs (R r).
+  Proof.
+    intro; induction destroy; auto. simpl. intros. apply orb_false_iff in H as [].
+    unfold Locmap.set. destruct (Loc.eq (R a) (R r)). exfalso. inv e. destruct (mreg_eq r r); auto. inv H.
+    destruct (Loc.diff_dec (R a) (R r)). 2: { simpl in n0. exfalso. apply n0. intro; subst. apply n; auto. }
+    simpl in d. eapply IHdestroy; eauto.
+  Qed.
 
+  Lemma destroyed_reg: forall destroy rs r,
+    mreg_in_list r destroy = true ->
+    (undef_regs destroy rs) (R r) = Vundef.
+  Proof.
+    intro; induction destroy; auto; simpl; intros. discriminate H.
+    apply orb_true_iff in H as []; unfold Locmap.set.
+    destruct (Loc.eq (R a) (R r)); auto. exfalso. destruct (mreg_eq r a). subst. apply n; auto. inv H.
+    eapply IHdestroy in H. erewrite H.
+    destruct (Loc.eq (R a) (R r)); destruct (Loc.diff_dec (R a) (R r)); auto.
+  Qed.
+
+  Lemma not_destroyed_slot: forall destroy rs sl z ty,
+    (undef_regs destroy rs) (S sl z ty) = rs (S sl z ty).
+  Proof. intro; induction destroy; simpl; auto. Qed.
+
+  Lemma lsagree_swap_destroy:
+    forall r res res0 destroy destroy0 rs rs' v v0,
+    lsagree rs rs' -> R res <> r -> R res0 <> r ->
+    mreg_in_list res destroy0 = false ->
+    mreg_in_list res0 destroy = false ->
+    undef_regs destroy0
+    (fun p : loc => if Loc.eq (R res) p then v
+                    else if Loc.diff_dec (R res) p
+                    then undef_regs destroy rs p else Vundef) r
+    = undef_regs destroy
+    (fun p : loc => if Loc.eq (R res0) p then v0
+                    else if Loc.diff_dec (R res0) p 
+                    then undef_regs destroy0 rs' p else Vundef) r.
+  Proof.
+    intros r res res0. destruct r. 
+    (* TODO: should not use induction *)
+    { intros. remember (mreg_in_list r destroy0) as b1. remember (mreg_in_list r destroy) as b2.
+      destruct b1; destruct b2; symmetry in Heqb1; symmetry in Heqb2.
+      - erewrite! destroyed_reg; eauto.
+      - erewrite destroyed_reg; eauto. erewrite not_destroyed_reg; eauto.
+        destruct (Loc.eq (R res0) (R r)). inv e. exfalso. apply H1; auto.
+        destruct (Loc.diff_dec (R res0) (R r)); auto. erewrite destroyed_reg; auto.
+      - erewrite not_destroyed_reg; eauto. erewrite! destroyed_reg; eauto.
+        destruct (Loc.eq (R res) (R r)). inv e. exfalso. apply H0; auto.
+        destruct (Loc.diff_dec (R res) (R r)); auto.
+      - erewrite! not_destroyed_reg; eauto.
+        destruct (Loc.eq (R res) (R r)). inv e. exfalso. apply H0; auto.
+        destruct (Loc.eq (R res0) (R r)). inv e. exfalso. apply H1; auto.
+        destruct (Loc.diff_dec (R res) (R r)); destruct (Loc.diff_dec (R res0) (R r)); auto.
+        eapply H. exfalso. apply n1. simpl. intro; subst. apply H1; auto.
+        exfalso. apply n1. simpl. intro; subst. apply H0; auto.
+    }
+    { intros. rewrite! not_destroyed_slot. simpl. eapply H. }
+  Qed.
+
+  Lemma lsagree_indep_set: forall rs rs' res res0 v v0 destroy destroy0,
+    (if mreg_eq res res0 then true else false) = false ->
+    mreg_in_list res destroy0 = false ->
+    mreg_in_list res0 destroy = false ->
+    lsagree rs rs' ->
+    lsagree (Locmap.set (R res0) v0 
+              (undef_regs destroy0 (Locmap.set (R res) v (undef_regs destroy rs))))
+            (Locmap.set (R res) v
+              (undef_regs destroy (Locmap.set (R res0) v0 (undef_regs destroy0 rs')))).
+  Proof.
+    intros. intro. unfold Locmap.get; simpl. unfold Locmap.set.
+    destruct (Loc.eq (R res0) r); destruct (Loc.eq (R res) r).
+    { subst. inv e0. destruct (mreg_eq res0 res0). discriminate H. exfalso; apply n; auto. }
+    { subst. destruct (Loc.diff_dec (R res) (R res0)). simpl in d.
+      erewrite <- destroy_not_influenced; auto. destruct (Loc.eq (R res0) (R res0)); auto.
+      destruct (Loc.diff_dec (R res0) (R res0)); auto.
+      exfalso; apply d0; auto. exfalso; auto. simpl in n0. exfalso; apply n0; intro; subst; auto. }
+    { subst. destruct (Loc.diff_dec (R res0) (R res)). simpl in d.
+      erewrite <- destroy_not_influenced; auto. destruct (Loc.eq (R res) (R res)); auto.
+      destruct (Loc.diff_dec (R res) (R res)); auto.
+      exfalso; apply d0; auto. exfalso; auto. simpl in n0. exfalso; apply n0; intro; subst; auto. }
+    { destruct (Loc.diff_dec (R res0) r).
+      2:{ destruct r. simpl in n1. exfalso; apply n1; intro; subst; auto. simpl in n1; exfalso; auto. }
+      destruct (Loc.diff_dec (R res) r).
+      2:{ destruct r. simpl in n1. exfalso; apply n1; intro; subst; auto. simpl in n1; exfalso; auto. }
+      eapply lsagree_swap_destroy; eauto. }
+  Qed.
 
   Lemma independent_two_step_match:
       forall stk stk' f f' sp sp' c rs rs' m m' s3 i1 i2 t
@@ -857,179 +955,63 @@ Section SINGLE_SWAP_CORRECTNESS.
       rename H0 into DES1; rename H into DES2;
       fold s2_ in Hstep12, Hstep23; fold s3_ in Hstep23.
       
-    (* Lgetstack D~> i2 *)
-        (* Mgetstack D~> Mgetstack *)
-        (* + set(s2' := State stk' f' sp' (Lgetstack sl ofs ty dst :: c)
-                      (Locmap.set (R dst0) (rs' (S sl0 ofs0 ty0))
-                        (LTL.undef_regs (LTL.destroyed_by_getstack sl0) rs')) m').
-          assert(Hstep12': step tge s1' E0 s2'). eapply exec_Lgetstack; eauto.
-          set(s3' := State stk' f' sp' c
-                      (Locmap.set (R dst)
-                        (Locmap.set (R dst0) (rs' (S sl0 ofs0 ty0))
-                            (LTL.undef_regs (LTL.destroyed_by_getstack sl0) rs')
-                            (S sl ofs ty))
-                        (LTL.undef_regs (LTL.destroyed_by_getstack sl)
-                            (Locmap.set (R dst0) (rs' (S sl0 ofs0 ty0))
-                              (LTL.undef_regs (LTL.destroyed_by_getstack sl0) rs')))) m').
-          assert(Hstep23':step tge s2' E0 s3'). eapply exec_Lgetstack; eauto.
-          eexists s3'; split. eapply plus_two; eauto.
-          inv MAT; eapply match_regular_state; eauto. eapply try_swap_at_tail.
-          assert (B1: forall b:bool, (if b then true else false) = false -> b = false). destruct b; auto.
-          apply B1 in INDEP. unfold happens_before_ww in INDEP; simpl in INDEP.
-          (* assert(AUX: forall dsta dstb,  ) *)
-
-          intro. unfold Locmap.get; unfold Locmap.set.
-          destruct (Loc.eq (R dst) (S sl0 ofs0 ty0)). inv e.
-          destruct (Loc.eq (R dst0) (S sl ofs ty)). inv e.
-          destruct (Loc.diff_dec (R dst) (S sl0 ofs0 ty0)). 2: { exfalso. apply n1. unfold Loc.diff. auto. }
-          destruct (Loc.diff_dec (R dst0) (S sl ofs ty)). 2: { exfalso. apply n1. unfold Loc.diff. auto. }
-
-          destruct (Loc.eq (R dst0) r); destruct (Loc.eq (R dst) r).
-          (* R dst0 = r /\ R dst = r  -- not possible *)
-          { subst. inv e0. destruct (mreg_eq dst0 dst0) in INDEP. discriminate INDEP.
-            exfalso; apply n1; auto. }
-          (* R dst0 = r /\ R dst <> r *)
-          { subst. destruct (Loc.diff_dec (R dst) (R dst0)). 
-            2:{ exfalso. apply n2. simpl; intro; subst; auto. }
-            (* fine *)  admit. }
-          (* R dst0 <> r /\ R dst = r *)
-          { subst. destruct (Loc.diff_dec (R dst0) (R dst)).
-            2: { exfalso. apply n2. simpl; intro; subst; auto. }
-            (* fine *) admit. }
-          (* R dst0 <> r /\ R dst <> r *)
-          { destruct (Loc.diff_dec (R dst) (R dst0)).
-            2:{ assert(dst <> dst0). destruct (mreg_eq dst dst0) in INDEP. discriminate INDEP.
-                  intro. apply n3; auto. exfalso. apply n3. auto. }
-            simpl in d1.
-            destruct (Loc.diff_dec (R dst0) r); auto.
-            2:{ exfalso. apply n3. simpl. destruct r; auto. intro; subst; auto. } 
-            destruct (Loc.diff_dec (R dst) r); auto.
-            2:{ exfalso. apply n3. simpl. destruct r; auto. intro; subst; auto. }
-            (* fine ..? *)
-            admit. } *)
-
-          (* lsagree
-          (Locmap.set (R dst0)
-             (Locmap.set (R dst) (rs (S sl ofs ty))
-                (LTL.undef_regs (LTL.destroyed_by_getstack sl) rs)
-                (S sl0 ofs0 ty0))
-
-             (LTL.undef_regs (LTL.destroyed_by_getstack sl0)
-                (Locmap.set (R dst) (rs (S sl ofs ty))
-                   (LTL.undef_regs (LTL.destroyed_by_getstack sl) rs))))
-
-          (Locmap.set (R dst)
-             (Locmap.set (R dst0) (rs' (S sl0 ofs0 ty0))
-                (LTL.undef_regs (LTL.destroyed_by_getstack sl0) rs')
-                (S sl ofs ty))
-             (LTL.undef_regs (LTL.destroyed_by_getstack sl)
-                (Locmap.set (R dst0) (rs' (S sl0 ofs0 ty0))
-                   (LTL.undef_regs (LTL.destroyed_by_getstack sl0) rs')))) *)
-          
-        (* Lgetstack D~> Lgetparam  *)
-        (* + inv H2; inv H4. 
-          eapply match_regular_states; eauto; inv MATCH; eauto.
-          eapply try_swap_at_tail. inv MEM.
-          erewrite match_stack_inv_parent_sp in H18.
-          rewrite H12 in H15; inv H15. erewrite H18 in H14. inv H14. 
-          intro; unfold Regmap.get. 
-          destruct (mreg_eq r dst); destruct (mreg_eq r dst0); 
-          destruct (mreg_eq r temp_for_parent_frame); subst; simpl; eauto.
-          admit. *)
-        (* Lgetstack D~> Lop  *)
-        (* + admit. *)
-        (* Lgetstack D~> Lload  *)
-        (* + admit. *)
-        
-      (* Msetstack D~> i2: trivial & discriminated *)
+    (* Lgetstack D~> i2: trivial & discriminated *)
+    (* Msetstack D~> i2: trivial & discriminated *)
         (* Msetstack D~> Mop *)
         (* + admit. *)
-      (* Lop D~> i2 *)
-        (* Lop D~> Lgetstack  *)
-        (* + admit. *)
-        (* Lop D~> Lset  *)
-        (* + admit. *)
-        (* Lop D~> Lgetparam: discriminated *)
-
+    (* Lop D~> i2 *)
+        (* Lop D~> Lgetstack  *) (* Lop D~> Lset  *) (* Lop D~> Lgetparam: discriminated *)
         (* Lop D~> Lop *)
-        + set(f'_ := f'). inv MAT. inv MEM. rename sp' into sp. rename m' into m.
-          simpl in RW, WR, WW. unfold happens_before_ww in WW; simpl in WW.
-          destruct (mreg_eq res res0); try discriminate WW. 
-          assert(eval_operation ge sp op (LTL.reglist rs args) m
-                  = eval_operation ge sp op
-                    (LTL.reglist
-                        (Locmap.set (R res0) v0
-                          (LTL.undef_regs (destroyed_by_op op0) rs))
-                        args) m
-          ). erewrite eval_args_irrelevent; eauto.
-          assert(eval_operation ge sp op0 (LTL.reglist rs args0) m
-                = eval_operation ge sp op0
-                  (LTL.reglist 
-                    (Locmap.set (R res) v (undef_regs (destroyed_by_op op) rs))
-                      args0) m
-          ). erewrite eval_args_irrelevent; eauto.
-          rewrite H10 in H; symmetry in H. rewrite H9 in H0.
-          set(s2' := State stk' f'_ sp (Lop op args res :: c)
-            (Locmap.set (R res0) v0 (undef_regs (destroyed_by_op op0) rs')) m).
-          eassert(Hstep12': step tge s1' E0 s2'). eapply exec_Lop; eauto.
-          unfold ge in H0; erewrite eval_op_genv_irrelevent in H0.
-          erewrite <- lsagree_reglist; eauto. eapply symbols_preserved.
-          eassert(Hstep23': step tge s2' E0 _). eapply exec_Lop; eauto.
-          unfold ge in H; erewrite eval_op_genv_irrelevent in H.
-          erewrite <- lsagree_reglist; eauto. eapply lsagree_set, lsagree_undef_regs; eauto.
-          eapply symbols_preserved. 
-          set(s3' := State stk' f'_ sp c
-              (Locmap.set (R res) v
-                (undef_regs (destroyed_by_op op)
-                    (Locmap.set (R res0) v0 (undef_regs (destroyed_by_op op0) rs')))) m).
-          exists s3'; split. eapply plus_two; eauto. eapply match_regular_state; eauto.
-          reflexivity. eapply try_swap_at_tail.
-          admit. (* fine *)
-          reflexivity.
-          (* repeat eapply B1 in INDEP.
-          set(s2' := State stk' f' sp' (Lgetstack sl ofs ty dst :: c)
-                  (Locmap.set (R dst0) (rs' (S sl0 ofs0 ty0))
-                    (LTL.undef_regs (LTL.destroyed_by_getstack sl0) rs')) m').
-          assert(Hstep12': step tge s1' E0 s2'). eapply exec_Lgetstack; eauto.
-          set(s3' := State stk' f' sp' c
-                  (Locmap.set (R dst)
-                    (Locmap.set (R dst0) (rs' (S sl0 ofs0 ty0))
-                        (LTL.undef_regs (LTL.destroyed_by_getstack sl0) rs')
-                        (S sl ofs ty))
-                    (LTL.undef_regs (LTL.destroyed_by_getstack sl)
-                        (Locmap.set (R dst0) (rs' (S sl0 ofs0 ty0))
-                          (LTL.undef_regs (LTL.destroyed_by_getstack sl0) rs')))) m').
-          assert(Hstep23':step tge s2' E0 s3'). eapply exec_Lgetstack; eauto.
-          eexists s3'; split. eapply plus_two; eauto.
-          inv MAT; eapply match_regular_state; eauto. eapply try_swap_at_tail.
-          assert (B1: forall b:bool, (if b then true else false) = false -> b = false). destruct b; auto.
-          apply B1 in INDEP. unfold happens_before_ww in INDEP; simpl in INDEP. *)
-        (* Lop D~> Lload *)
-        + admit.
-        (* Lop D~> Lstore *)
-        + admit.
-      (* Lload D~> i2 *)
-        (* Lload D~> Lgetstack *)
-        (* + admit. *)
-        (* Lload D~> Lgetparam *)
-        (* Lload D~> Lop *)
-        + admit.
-        (* Lload D~> Lload *)
-        + admit.
-        (* Lload D~> Lstore *)
-        + admit.
-      (* Lstore D~> i2: *)
-        (* Lstore D~> Lop *)
-        + admit.
-        (* Lstore D~> Lload *)
-        + admit.
-      (* Lcall D~> i2: trivial & discriminated *)
-      (* Ltailcall D~> i2: trivial & discriminated *)
-      (* Lbuiltin D~> i2: trivial & discriminated *)
-      (* Lgoto D~> i2: trivial & discriminated *)
-      (* Lcond D~> i2: trivial & discriminated*)
+    + set(f'_ := f'). inv MAT. inv MEM. rename sp' into sp. rename m' into m.
+      simpl in RW, WR, WW. unfold hb_ww in WW; simpl in WW. assert(WW_:= WW).
+      destruct (mreg_eq res res0) in WW; try discriminate WW.
+      assert(eval_operation ge sp op (LTL.reglist rs args) m
+        = eval_operation ge sp op
+          (LTL.reglist (Locmap.set (R res0) v0 (LTL.undef_regs (destroyed_by_op op0) rs)) args) m
+      ). erewrite eval_args_irrelevent; eauto.
+      assert(eval_operation ge sp op0 (LTL.reglist rs args0) m
+        = eval_operation ge sp op0
+          (LTL.reglist (Locmap.set (R res) v (undef_regs (destroyed_by_op op) rs)) args0) m
+      ). erewrite eval_args_irrelevent; eauto.
+      rewrite H10 in H; symmetry in H. rewrite H9 in H0.
+      set(s2' := State stk' f'_ sp (Lop op args res :: c)
+        (Locmap.set (R res0) v0 (undef_regs (destroyed_by_op op0) rs')) m).
+      eassert(Hstep12': step tge s1' E0 s2'). eapply exec_Lop; eauto.
+      unfold ge in H0; erewrite eval_op_genv_irrelevent in H0.
+      erewrite <- lsagree_reglist; eauto. eapply symbols_preserved.
+      eassert(Hstep23': step tge s2' E0 _). eapply exec_Lop; eauto.
+      unfold ge in H; erewrite eval_op_genv_irrelevent in H.
+      erewrite <- lsagree_reglist; eauto. eapply lsagree_set, lsagree_undef_regs; eauto.
+      eapply symbols_preserved. 
+      set(s3' := State stk' f'_ sp c
+          (Locmap.set (R res) v
+            (undef_regs (destroyed_by_op op)
+                (Locmap.set (R res0) v0 (undef_regs (destroyed_by_op op0) rs')))) m).
+      exists s3'; split. eapply plus_two; eauto. eapply match_regular_state; eauto.
+      reflexivity. eapply try_swap_at_tail. unfold hb_destroy_dst in DES1, DES2; simpl in DES1, DES2.
+      eapply lsagree_indep_set; eauto. reflexivity.
+    (* Lop D~> Lload *)
+    + admit.
+    (* Lop D~> Lstore *)
+    + admit.
+  (* Lload D~> i2 *)
+    (* Lload D~> Lgetstack *)  (* Lload D~> Lgetparam *) (* Lload D~> Lop *)
+    + admit.
+    (* Lload D~> Lload *)
+    + admit.
+    (* Lload D~> Lstore *)
+    + admit.
+  (* Lstore D~> i2: *)
+    (* Lstore D~> Lop *)
+    + admit.
+    (* Lstore D~> Lload *)
+    + admit.
+  (* Lcall D~> i2: trivial & discriminated *)
+  (* Ltailcall D~> i2: trivial & discriminated *)
+  (* Lbuiltin D~> i2: trivial & discriminated *)
+  (* Lgoto D~> i2: trivial & discriminated *)
+  (* Lcond D~> i2: trivial & discriminated*)
   Admitted.
-
 
   Definition next_exec (s: state): option instruction :=
     match s with
@@ -1040,16 +1022,11 @@ Section SINGLE_SWAP_CORRECTNESS.
 
   Definition index := option instruction.
   Inductive orderb: index -> index -> Prop :=
-    | orderb_neq: forall i, orderb (Some i) None
-    .
+    | orderb_neq: forall i, orderb (Some i) None.
 
   Lemma wf_orderb: well_founded orderb.
-  Proof.
-    hnf.
-    intros. eapply Acc_intro.
-    intros. induction H. eapply Acc_intro.
-    intros. inv H.
-  Qed.
+  Proof. hnf. intros. eapply Acc_intro. intros.
+    induction H. eapply Acc_intro. intros. inv H. Qed.
 
     (*
        sa ~~~~~~~> sb
@@ -1064,7 +1041,6 @@ Section SINGLE_SWAP_CORRECTNESS.
   | match_now : forall s s', match_states s s' -> match_states_aux None s s'
   | match_before: 
       forall sa i sa' t sb,
-        (* next_is_extern sa = false -> next_is_extern sb = false -> *)
         next_exec sa = Some i -> solid_inst i = false ->
         step ge sa t sb -> match_states sa sa' -> 
           match_states_aux (Some i) sb sa'
