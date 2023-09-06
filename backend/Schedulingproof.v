@@ -15,13 +15,108 @@ End SMALL_STEP_EXT.
 
 Require Import Coqlib Maps BoolEqual.
 
-
 Import ListNotations.
-Open Scope list_scope. 
+Open Scope list_scope.
+Open Scope nat_scope.
+
+Require Import List Lia.
+
+Section LIST_INDUCTION.  
+  Variable A : Type.
+  Variable P : list A -> Prop.
+  Hypothesis H : forall xs, (forall l, length l < length xs -> P l) -> P xs.
+
+  Theorem list_length_ind : forall xs, P xs.
+  Proof.
+    assert (forall xs l : list A, length l <= length xs -> P l) as H_ind.
+    { induction xs; intros l Hlen; apply H; intros l0 H0.
+      - inversion Hlen. lia.
+      - apply IHxs. simpl in Hlen. lia. }
+    intros xs. apply H_ind with (xs := xs). lia.
+  Qed.
+End LIST_INDUCTION.
+
+
+(* Section LIST_DOUBLE_INDUCTION.
+
+  Variable A : Type.
+  Variable P : list A -> Prop.
+  Variable R : list A -> list A -> Prop.
+
+  Hypothesis H : forall la lb, length la = length lb ->
+    (forall la' lb', length la' = length lb' -> 
+        length la' < length la -> P la' -> P lb' -> R la' lb') -> R la lb.
+
+  Theorem list_length_double_ind : forall la lb, length la = length lb -> P la -> P lb -> R la lb.
+  Proof.
+    intros. induction la.
+
+    assert (forall (la lb la' lb': list A), length la' = length lb' -> 
+              length la' <= length la -> R la' lb').
+    { induction la.
+      - intros lb la' lb' Heq Hle. inv Hle. apply H. auto. intros. apply H; auto.
+      - apply IHxs. simpl in Hlen. omega.
+    }
+    intros xs.
+    apply H_ind with (xs := xs).
+    omega.
+  Qed.
+
+End LIST_DOUBLE_INDUCTION. *)
+
+Require Import Sorting.Permutation.
+Section TOPOSORT.
+
+  Variable A: Type.
+  Variable R: A -> A -> Prop.
+
+  Definition not_gt (a: A) (l: list A): Prop. Admitted.
+
+  Inductive topo_reorder : list A -> list A -> Prop :=
+  | topo_reorder_nil: topo_reorder [] []
+  | topo_reorder_skip x l l' : not_gt x l -> topo_reorder l l' -> topo_reorder (x::l) (x::l')
+  | topo_reorder_swap x y l : (~ R x y) -> (~ R y x) -> topo_reorder (y::x::l) (x::y::l)
+  | topo_reorder_trans l l' l'' :
+      topo_reorder l l' -> topo_reorder l' l'' -> topo_reorder l l''.
+
+  Inductive topo_reorder' : list A -> list A -> Prop :=
+  | topo_reorder_nil': topo_reorder' [] []
+  | topo_reorder_swap' x y l1 l2 : ~ R x y -> ~ R y x -> topo_reorder' (l1 ++ (y::x::l2)) (l1 ++ (x::y::l2)).
+  (* | topo_reorder_trans l l' l'' :
+      topo_reorder l l' -> topo_reorder l' l'' -> topo_reorder l l''. *)
+
+  Fixpoint swap (n: nat) (l: list A): list A :=
+    match n, l with
+    | _, nil => nil | _, i :: nil => l
+    | O, i1 :: i2 :: l' => i2 :: i1 :: l'
+    | Datatypes.S n', i :: l' => i :: swap n' l'
+    end.
+
+  Fixpoint swap_seq (ln: list nat) (la: list A) :=
+    match ln with
+    | [] => la
+    | n :: ln' => swap_seq ln' (swap n la)
+    end.
+
+  Lemma topo_reorder_is_permutation: forall l l', topo_reorder l l' -> Permutation l l'.
+  Proof. intros. induction H. apply perm_nil. apply perm_skip; auto.
+    - apply perm_swap. - eapply perm_trans; eauto. Qed.
+
+  Theorem swapping_property_general: forall l l', topo_reorder l l' -> exists ln, l' = swap_seq ln l.
+  Proof.
+    intros. induction H.
+    - exists []. auto.
+    - destruct IHtopo_reorder as [ln]. (* fine ? *) admit.
+    - exists [0]. simpl; auto.
+    - (* fine! *) admit.
+  Admitted.
+
+End TOPOSORT.
+
 
 (** TODO: move to TopoSort files *)
 Require Import Relations.Relation_Definitions.
-Section TOPO.
+Section TRY_SWAP.
   Open Scope nat_scope.
   Context {A: Type}.
   Variable (rel: A -> A -> bool).
@@ -30,7 +125,7 @@ Section TOPO.
     match n, l with
     | _, nil => nil | _, i :: nil => l        (* None: did not swap *)
     | O, i1 :: i2 :: l' => if rel i1 i2 then l
-                            else (i2 :: i1 :: l')
+                           else (i2 :: i1 :: l')
     | Datatypes.S n', i :: l' => i :: try_swap n' l'
     end.
   
@@ -62,20 +157,72 @@ Section TOPO.
       destruct (rel x a); inv H; eapply try_swap_at_tail.
     - destruct l. inv H. exists O; auto. inv H. exists n; auto.
   Qed.
-  
-  (* Lemma try_swap_head_changed:
-    forall n x y l, try_swap n (x :: y :: l) = y :: x :: l ->
-      exists n', try_swap n' l = l.
-  Proof.  *)
 
-  Section DECIDE_REL.
-    Variable (Rel: A -> A -> Prop).
-    Hypothesis PO: order A Rel.
-    Hypothesis decide_rel: forall a1 a2, Rel a1 a2 <-> rel a1 a2 = true.
+  Fixpoint try_swap_seq (ln: list nat) (la: list A): list A :=
+    match ln with
+    | nil => la
+    | n :: ln' => try_swap_seq ln' (try_swap n la)
+    end.
 
-    (* Hypothesis porder: PartialOrder (@eq A) Rel. *)
-  End DECIDE_REL.
-End TOPO.
+  Let R := fun x y => rel x y = true.
+
+  Theorem swapping_property:
+    forall l l', topo_reorder A R l l' -> exists ln, l' = try_swap_seq ln l.
+  Proof.
+    intros. induction H.
+    - exists []; auto.
+    - destruct IHtopo_reorder as [ln]. admit. (* fine *)
+    - exists [0]. simpl. unfold R in H, H0.
+  Admitted.
+
+End TRY_SWAP.
+
+
+
+Section LIST_TOPO.
+
+  Fixpoint numlist0 {X: Type} (l: list X) (n: nat) :=
+    match l with
+    | [] => []
+    | x :: l' => (n, x) :: numlist0 l' (S n)
+    end.
+
+  Definition numlist {X: Type} (l: list X) := numlist0 l O.
+
+  Lemma numbered_list_nodup {X: Type}: forall l: list X, NoDup (numlist0 l O).
+  Proof.
+    induction l. simpl. apply NoDup_nil.
+    simpl. (* should be fine *)
+  Admitted.
+
+  Context {A: Type}.
+  Variable l: list A.
+
+  (* Fixpoint depend_list (a: A) (l: list (nat * A)) :=
+    match l with
+    | [] => []
+    | (i, a') :: l' => if rel a a' then a' :: depend_list a l'
+                      else depend_list a l'
+    end.
+
+  Fixpoint depend_map (l: list (nat * A)) :=
+    match l with
+    | [] => PTree.empty (list A)
+    | (i, a) :: l' => PTree.set (Pos.of_nat i) (depend_list a l') (depend_map l')
+    end.
+
+  Fixpoint list2map {X: Type} (l: list X) (n: nat):=
+    match l with
+    | [] => PMap
+    | x :: l' => PMap.set (Pos.of_nat n) x (list2map l' (S n))
+    end.
+
+  Inductive list_topo_order: (nat * A) -> (nat * A) -> Prop :=
+
+  . *)
+
+
+End LIST_TOPO.
 
 Require Import Errors.
 Require Import AST Integers Values Events Memory Linking Globalenvs Smallstep.
@@ -88,8 +235,10 @@ Import ListNotations.
 Open Scope list_scope.
 
 Section SIMULATION_SEQUENCE.
+  Variable F V: Type.
+
   Definition transf_program_one (transf_def: ident -> fundef -> fundef) :=
-      transform_partial_program2 
+      transform_partial_program2
         (fun i f => OK (transf_def i f)) 
         (fun i (v:unit) => OK v).
 
@@ -134,6 +283,19 @@ Section SIMULATION_SEQUENCE.
     match_program (fun ctx f tf => real_transf_fundef f = OK tf) eq prog tprog. *)
 
 End SIMULATION_SEQUENCE.
+
+
+
+Section SPLIT_TRANSF.
+
+  Variable prog: program.
+  Variable tprog: program.
+  Variable tfl: fundef -> fundef.
+
+
+End SPLIT_TRANSF.
+
+
 
 
 (* TODO Warning: simple but machine dependent;
@@ -648,7 +810,7 @@ Inductive match_states: state -> state -> Prop :=
 
 (** Step 1: prove the correctness of one single swap *)
 
-Definition match_prog (funid: ident) (n: nat) (prog tprog: program) :=
+Definition match_prog (prog tprog: program) :=
   (* let transf_fun := (fun i f => if ident_eq i funid 
                                 then transf_fundef_try_swap_nth n f else OK f) in
   let transf_var := (fun (i: ident) (v:unit) => OK v) in *)
@@ -657,7 +819,7 @@ Definition match_prog (funid: ident) (n: nat) (prog tprog: program) :=
 Lemma transf_program_match:
 forall funid n prog tprog, 
   transf_program_try_swap_nth_in_one funid n prog = OK tprog -> 
-    match_prog funid n prog tprog.
+    match_prog prog tprog.
 Proof.
     intros. 
     eapply match_transform_partial_program2. eapply H.
@@ -889,8 +1051,6 @@ Section SINGLE_SWAP_CORRECTNESS.
      reglist (undef_regs destroy rs) args = reglist rs args.
   Proof. induction args; simpl; auto; intros. apply orb_false_iff in H as [].
     erewrite IHargs; eauto. erewrite not_destroyed_reg; eauto. Qed.
-
-
 
   Lemma lsagree_swap_destroy:
     forall r res res0 destroy destroy0 rs rs' v v0,
@@ -1368,18 +1528,229 @@ Section SINGLE_SWAP_CORRECTNESS.
 End SINGLE_SWAP_CORRECTNESS.
 
 
-Lemma transf_program_forward_simulation:
-forall funid n prog tprog, 
-  transf_program_try_swap_nth_in_one funid n prog = OK tprog ->
-  forward_simulation (Linear.semantics prog) 
-                       (Linear.semantics tprog).
+Lemma transf_program_single_swap_forward_simulation:
+  forall funid n prog tprog, 
+    transf_program_try_swap_nth_in_one funid n prog = OK tprog ->
+    forward_simulation (Linear.semantics prog) (Linear.semantics tprog).
 Proof.
   intros. eapply forward_simulation_safe_swap.
   eapply transf_program_match; eauto.
 Qed.
 
+Fixpoint transf_program_try_swap_seq (seq: list (ident * nat) ) (prog: program):=
+  match seq with
+  | [] => OK prog
+  | (id, n) :: seq' => do prog' <- transf_program_try_swap_nth_in_one id n prog;
+                       transf_program_try_swap_seq seq' prog'
+  end.
 
-Section Multi_SWAP_CORRECTNESS.
+Lemma transf_program_multi_swap_forward_simulation:
+  forall seq prog tprog, 
+  transf_program_try_swap_seq seq prog = OK tprog ->
+    forward_simulation (Linear.semantics prog) (Linear.semantics tprog).
+Proof.
+  induction seq; intros; simpl in H; auto.
+  - inv H. apply forward_simulation_refl.
+  - destruct a. monadInv H.
+    eapply compose_forward_simulations with (L2:= semantics x); auto. 
+    eapply transf_program_single_swap_forward_simulation; eauto.
+Qed.
 
 
-End Multi_SWAP_CORRECTNESS.
+
+(* Case Study: Instruction Scheduling *)
+
+Require Import FSets.
+
+Module S <: FSetInterface.S := PositiveSet.
+Print Module S.
+Print S.elt.
+
+Goal PositiveSet.t = S.t. unfold S.t, PositiveSet.t. auto. Qed.
+
+Section INST_SCHED.
+
+  (* Some outside priority funcion. The prioirty oracle can be custumized.
+        It should return the location of the first pick *)
+  Variable firstpick: list (positive * instruction) -> list (positive * instruction) -> positive.
+
+  (* the priority function has to guarantee the first pick in in the list *)
+  (* Hypothesis priority_sound: forall l, List.In (firstpick l) l. *)
+
+  (* Data structure to store dependence relation *)
+  Definition DPMap_t := PMap.t (option (instruction * S.t)).
+  (* Definition DPMap_init := PMap.init (option (instruction * S.t)). *)
+  (* Definition DPMap_set := PMap.set (option (instruction * S.t)). *)
+
+  (* Definition depends_on (i1 i2: instruction) := happens_before *)
+
+  Definition numblock := list (positive * instruction).
+
+  (* Generate a numbered block from a basic block *)
+  Fixpoint numblockgen0 (l: list instruction) (n: positive) :=
+    match l with
+    | [] => []
+    | x :: l' => (n, x) :: numblockgen0 l' (n + 1)
+    end.
+
+  (* block number started from 1 *)
+  Definition numblockgen (l: list instruction) := numblockgen0 l 1.
+
+  (* input l should be !!reversed!! list of original list, for efficient computing and proving *)
+  Fixpoint dep_pset (i: instruction) (l_rev: numblock): S.t :=
+    match l_rev with
+    | nil => S.empty
+    | (k', i') :: l_rev' => if happens_before i' i 
+                        then S.add k' (dep_pset i l_rev')
+                        else dep_pset i l_rev'
+    end.
+
+  Fixpoint dep_map (l_rev: numblock): DPMap_t :=
+    match l_rev with
+    | nil => PMap.init None
+    | (k, i) :: l_rev' => PMap.set k (Some (i, dep_pset i l_rev')) (dep_map l_rev')
+    end.
+
+  Definition dep_map_gen (l: list instruction) :=
+    dep_map (List.rev (numblockgen l)).
+
+  (* Fixpoint dep_update (m: DPMap_t) (k: positive) (i: instruction) (l: list (positive * instruction)) :=
+    match l with
+    | nil => m
+    | (k', i') :: l' => if happens_before i i' 
+                        then dep_update (DPMap_set k (i, ) m) i l'
+                        else dep_update m k i l' 
+    end. *)
+
+
+
+
+  Fixpoint indep_nodes'  (m : PTree.tree' (instruction * S.t)) (i: positive) 
+    (k: list (positive * instruction)) {struct m}: list (positive * instruction) :=
+    match m with
+    | PTree.Node001 r => indep_nodes' r (xI i) k
+    | PTree.Node010 x => if PositiveSet.is_empty (snd x) then (PTree.prev i, fst x) :: k
+                        else k
+    | PTree.Node011 x r => if PositiveSet.is_empty (snd x) 
+                          then (PTree.prev i, fst x) :: indep_nodes' r (xI i) k
+                          else indep_nodes' r (xI i) k
+    | PTree.Node100 l => indep_nodes' l (xO i) k
+    | PTree.Node101 l r => indep_nodes' l (xO i) (indep_nodes' r (xI i) k)
+    | PTree.Node110 l x => if PositiveSet.is_empty (snd x) 
+                          then indep_nodes' l (xO i) ((PTree.prev i, fst x) ::k)
+                          else indep_nodes' l (xO i) k
+    | PTree.Node111 l x r => if PositiveSet.is_empty (snd x)
+                            then ((PTree.prev i, fst x) :: (indep_nodes' r (xI i) k))
+                            else (indep_nodes' r (xI i) k)
+    end.
+
+  Definition indep_nodes (m : DPMap_t): list (positive*instruction) := 
+    match snd m with 
+    | PTree.Empty => nil 
+    | PTree.Nodes m' => indep_nodes' m' xH nil 
+    end.
+
+  Print PTree.map.
+  Check DPMap.
+  Goal forall m: DPMap, True.
+  intros. Check (snd m). Abort.
+  Check PTree.Node001.
+  Print PTree.prev.
+
+  Fixpoint schedule' (m: DPMap) (n: nat) (done: list positive): list positive:=
+    match n with
+    | Datatypes.O => nil
+    | Datatypes.S n' => nil
+    end.
+
+
+  
+
+  (* Fixpoint mapblock (l: list instruction) (n: nat): option instruction :=
+    match l, n with
+    | i :: l', Datatypes.O => Some i
+    | i :: l', Datatypes.S n' => map_block l' n'
+    | nil, _ => None
+    end. *)
+
+
+
+
+  Fixpoint numblock_at (pos: positive) (pl: numblock_t): option instruction :=
+    match pl with
+    | nil => None
+    | (pos', i) :: pl' => if Pos.eqb pos pos' then Some i else numblock_at pos pl'
+    end.
+
+  Lemma numbblock_nodup: forall l i, NoDup (numblock0 l i).
+  Proof.
+    induction l; intros. simpl. apply NoDup_nil.
+    simpl. apply NoDup_cons; auto. (* should be fine *)
+  Admitted.
+
+
+  
+
+  Fixpoint hbset (i: instruction) (pl: list (positive*instruction)): PositiveSet.t :=
+    match pl with 
+    | nil => PositiveSet.empty
+    | (pos, i') :: pl' => 
+        if happens_before i i' then PositiveSet.add pos (hbset i pl')  
+        else hbset i pl'
+    end.
+
+
+  Fixpoint hbmap (pl: list (positive*instruction)): HBMap :=
+    match pl with
+    | _ => PMap.init
+    end.
+
+  Fixpoint block2map (l: list instruction): HBMap :=
+
+
+
+  Fixpoint hblist (i: instruction) (nl: list (nat *instruction)): list nat :=
+    match nl with 
+    | nil => nil
+    | (n', i') :: nl' => if happens_before i i' then n' :: hblist i nl'
+                         else hblist i nl'
+    end.
+
+  Fixpoint map_hblist (l: list instruction) (n: nat): option (list nat):=
+    match l, n with
+    | i :: l', Datatypes.O => Some i
+    | i :: l', Datatypes.S n' => map_block l' n'
+    | nil, _ => None
+    end.
+
+
+  Context {A: Type}.
+  Variable l: list A.
+
+  (* Fixpoint depend_list (a: A) (l: list (nat * A)) :=
+    match l with
+    | [] => []
+    | (i, a') :: l' => if rel a a' then a' :: depend_list a l'
+                      else depend_list a l'
+    end.
+
+  Fixpoint depend_map (l: list (nat * A)) :=
+    match l with
+    | [] => PTree.empty (list A)
+    | (i, a) :: l' => PTree.set (Pos.of_nat i) (depend_list a l') (depend_map l')
+    end.
+
+  Fixpoint list2map {X: Type} (l: list X) (n: nat):=
+    match l with
+    | [] => PMap
+    | x :: l' => PMap.set (Pos.of_nat n) x (list2map l' (S n))
+    end.
+
+  Inductive list_topo_order: (nat * A) -> (nat * A) -> Prop :=
+
+  . *)
+  
+
+
+
+End INST_SCHED.
