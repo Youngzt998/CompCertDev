@@ -64,56 +64,6 @@ End LIST_INDUCTION.
 
 End LIST_DOUBLE_INDUCTION. *)
 
-Require Import Sorting.Permutation.
-Section TOPOSORT.
-
-  Variable A: Type.
-  Variable R: A -> A -> Prop.
-
-  Definition not_gt (a: A) (l: list A): Prop. Admitted.
-
-  Inductive topo_reorder : list A -> list A -> Prop :=
-  | topo_reorder_nil: topo_reorder [] []
-  | topo_reorder_skip x l l' : not_gt x l -> topo_reorder l l' -> topo_reorder (x::l) (x::l')
-  | topo_reorder_swap x y l : (~ R x y) -> (~ R y x) -> topo_reorder (y::x::l) (x::y::l)
-  | topo_reorder_trans l l' l'' :
-      topo_reorder l l' -> topo_reorder l' l'' -> topo_reorder l l''.
-
-  Inductive topo_reorder' : list A -> list A -> Prop :=
-  | topo_reorder_nil': topo_reorder' [] []
-  | topo_reorder_swap' x y l1 l2 : ~ R x y -> ~ R y x -> topo_reorder' (l1 ++ (y::x::l2)) (l1 ++ (x::y::l2)).
-  (* | topo_reorder_trans l l' l'' :
-      topo_reorder l l' -> topo_reorder l' l'' -> topo_reorder l l''. *)
-
-  Fixpoint swap (n: nat) (l: list A): list A :=
-    match n, l with
-    | _, nil => nil | _, i :: nil => l
-    | O, i1 :: i2 :: l' => i2 :: i1 :: l'
-    | Datatypes.S n', i :: l' => i :: swap n' l'
-    end.
-
-  Fixpoint swap_seq (ln: list nat) (la: list A) :=
-    match ln with
-    | [] => la
-    | n :: ln' => swap_seq ln' (swap n la)
-    end.
-
-  Lemma topo_reorder_is_permutation: forall l l', topo_reorder l l' -> Permutation l l'.
-  Proof. intros. induction H. apply perm_nil. apply perm_skip; auto.
-    - apply perm_swap. - eapply perm_trans; eauto. Qed.
-
-  Theorem swapping_property_general: forall l l', topo_reorder l l' -> exists ln, l' = swap_seq ln l.
-  Proof.
-    intros. induction H.
-    - exists []. auto.
-    - destruct IHtopo_reorder as [ln]. (* fine ? *) admit.
-    - exists [0]. simpl; auto.
-    - (* fine! *) admit.
-  Admitted.
-
-End TOPOSORT.
-
-
 (** TODO: move to TopoSort files *)
 Require Import Relations.Relation_Definitions.
 Section TRY_SWAP.
@@ -164,65 +114,252 @@ Section TRY_SWAP.
     | n :: ln' => try_swap_seq ln' (try_swap n la)
     end.
 
-  Let R := fun x y => rel x y = true.
-
-  Theorem swapping_property:
+  (* Theorem swapping_property: 
+  let R := fun x y => rel x y = true in
     forall l l', topo_reorder A R l l' -> exists ln, l' = try_swap_seq ln l.
   Proof.
     intros. induction H.
     - exists []; auto.
     - destruct IHtopo_reorder as [ln]. admit. (* fine *)
     - exists [0]. simpl. unfold R in H, H0.
-  Admitted.
+  Admitted. *)
 
 End TRY_SWAP.
 
 
-
-Section LIST_TOPO.
-
-  Fixpoint numlist0 {X: Type} (l: list X) (n: nat) :=
-    match l with
-    | [] => []
-    | x :: l' => (n, x) :: numlist0 l' (S n)
-    end.
-
-  Definition numlist {X: Type} (l: list X) := numlist0 l O.
-
-  Lemma numbered_list_nodup {X: Type}: forall l: list X, NoDup (numlist0 l O).
-  Proof.
-    induction l. simpl. apply NoDup_nil.
-    simpl. (* should be fine *)
-  Admitted.
+Require Import Sorting.Permutation.
+Section TOPO_REORDER.
 
   Context {A: Type}.
-  Variable l: list A.
+  Variable R: A -> A -> Prop.
 
-  (* Fixpoint depend_list (a: A) (l: list (nat * A)) :=
+  (* not greater than *)
+  Inductive ngt (a: A): list A -> Prop :=
+  | ngt_nil: ngt a []
+  | ngt_l: forall x, ~ R x a -> ngt a [x]
+  | ngt_cons: forall x l, ngt a l -> ~ R x a -> ngt a (x :: l)  
+  .
+
+  Inductive topo_sorted: list A -> Prop :=
+  | topo_sorted_nil: topo_sorted []
+  | topo_sorted_l: forall x, topo_sorted [x]
+  | topo_sorted_cons: forall x y l, ~ R y x -> topo_sorted (y::l) -> topo_sorted (x :: y :: l)
+  .
+
+  Inductive topo_reorder : list A -> list A -> Prop :=
+  | topo_reorder_nil: topo_reorder [] []
+  | topo_reorder_skip x l l' : ngt x l -> topo_reorder l l' -> topo_reorder (x::l) (x::l')
+  | topo_reorder_swap x y l : (~ R x y) -> (~ R y x) -> topo_reorder (y::x::l) (x::y::l)
+  | topo_reorder_trans l l' l'' :
+      topo_reorder l l' -> topo_reorder l' l'' -> topo_reorder l l''.
+
+  Inductive topo_reorder' : list A -> list A -> Prop :=
+  | topo_reorder_nil': topo_reorder' [] []
+  | topo_reorder_single': forall x, topo_reorder' [x] [x]
+  | topo_reorder_swap' x y l1 l2 : ~ R x y -> ~ R y x -> topo_reorder' (l1 ++ (y::x::l2)) (l1 ++ (x::y::l2)).
+  (* | topo_reorder_trans l l' l'' :
+      topo_reorder l l' -> topo_reorder l' l'' -> topo_reorder l l''. *)
+
+  Fixpoint swap (n: nat) (l: list A): list A :=
+    match n, l with
+    | _, nil => nil | _, i :: nil => l
+    | O, i1 :: i2 :: l' => i2 :: i1 :: l'
+    | Datatypes.S n', i :: l' => i :: swap n' l'
+    end.
+
+  Fixpoint swap_seq (ln: list nat) (la: list A) :=
+    match ln with
+    | [] => la
+    | n :: ln' => swap_seq ln' (swap n la)
+    end.
+
+  (* TODO: l need to be sorted already *)
+  Lemma topo_reorder_refl: forall l, topo_reorder l l.
+  Proof. induction l. apply topo_reorder_nil. Admitted.
+
+  Lemma topo_reorder_is_permutation: forall l l', topo_reorder l l' -> Permutation l l'.
+  Proof. intros. induction H. apply perm_nil. apply perm_skip; auto.
+    - apply perm_swap. - eapply perm_trans; eauto. Qed.
+
+End TOPO_REORDER.
+
+Section TOPO_REORDER_SUBORDER.
+
+  Context {A: Type}.
+  Variable R1 R2: A -> A -> Prop.
+  Hypothesis suborder: forall x y, R1 x y -> R2 x y.
+
+  Lemma ngt_suborder_preserve:
+    forall x l, ngt R2 x l -> ngt R1 x l.
+  Proof.
+    intros. induction H.
+    - apply ngt_nil.
+    - apply ngt_l. 
+
+  Admitted.
+
+
+  Lemma topo_reorder_suborder_preserve:
+    forall l l', topo_reorder R1 l l' -> topo_reorder R2 l l'.
+  Proof.
+    intros. induction H.
+    - apply topo_reorder_nil.
+    - apply topo_reorder_skip. admit.
+  Abort.
+
+End TOPO_REORDER_SUBORDER.
+
+Open Scope positive_scope.
+Section LIST_TOPO.
+
+  Context {A: Type}.
+
+  Fixpoint numlistgen0 (l: list A) (n: positive): list (positive * A) :=
     match l with
     | [] => []
-    | (i, a') :: l' => if rel a a' then a' :: depend_list a l'
-                      else depend_list a l'
+    | x :: l' => (n, x) :: numlistgen0 l' (n + 1)
     end.
+  
+  Check numlistgen0.
 
-  Fixpoint depend_map (l: list (nat * A)) :=
+  Definition numlistgen (l: list A) := numlistgen0 l 1.
+
+  Fixpoint numlistoff (l: list (positive * A)): list A :=
     match l with
-    | [] => PTree.empty (list A)
-    | (i, a) :: l' => PTree.set (Pos.of_nat i) (depend_list a l') (depend_map l')
+    | [] => []
+    | (n, x) :: l' => x :: numlistoff l'
     end.
 
-  Fixpoint list2map {X: Type} (l: list X) (n: nat):=
-    match l with
-    | [] => PMap
-    | x :: l' => PMap.set (Pos.of_nat n) x (list2map l' (S n))
-    end.
+  Lemma numlist_gen_off: forall l, numlistoff (numlistgen l) = l.
+  Proof. Admitted.
+  
+  Lemma numlist_off_gen: forall nl, numlistgen (numlistoff nl) = nl.
+  Proof. Admitted. 
+  
+  Definition NoDupNum (l: list (positive * A)) := NoDup (List.map (fun p => fst p) l).
 
-  Inductive list_topo_order: (nat * A) -> (nat * A) -> Prop :=
+  Lemma numbered_list_nodup_number0: forall l i, NoDupNum (numlistgen0 l i).
+  Proof. 
+    induction l.
+    - intros. simpl. apply NoDup_nil.
+    - intros. simpl. apply NoDup_cons. fold List.map.
+      intro.
+      admit. (* fine *)
+      apply IHl.
+  Admitted.
 
-  . *)
+  Lemma numbered_list_nodup_number: forall l, NoDupNum (numlistgen l).
+  Proof. intros. apply numbered_list_nodup_number0. Qed.
+
+  Lemma nodup_number_nodup: forall l, NoDupNum l -> NoDup l.
+  Proof.
+    induction l. intros.
+    - apply NoDup_nil.
+    - intros. apply NoDup_cons. inv H.
+      intro. apply H2.
+      assert(TMP: forall l x, In x l -> In (fst x) (map (fun p : positive * A => fst p) l)).
+      { induction l0; intros; auto. destruct H0. subst. left; auto.
+        right. eapply IHl0; auto. }
+      apply TMP; auto.
+      apply IHl. apply NoDup_cons_iff in H as []; auto.
+  Qed.
+
+  Lemma numbered_list_nodup: forall l, NoDup (numlistgen l).
+  Proof. intros. apply nodup_number_nodup, numbered_list_nodup_number. Qed.
+
+  Variable R: A -> A -> Prop.
+  Variable l: list A.
+  
+
+  (* Generated Relation from a list *)
+  Inductive GenR (na1 na2: positive * A): Prop :=
+   GenR_intro: List.In na1 (numlistgen l) -> List.In na2 (numlistgen l) -> 
+    fst na1 < fst na2 -> R (snd na1) (snd na2)  -> GenR na1 na2
+  .
+
+  Check topo_reorder GenR.
+  
+  Definition treorder := topo_reorder GenR.
 
 
 End LIST_TOPO.
+
+
+Section SWAPPING_PROPERTY.
+  Context {A: Type}.
+  Variable Rb: A -> A -> bool.
+  Hypothesis SymmetricR: forall x y, Rb x y = true -> Rb y x = true.
+
+  Let Rbnum (na1 na2: positive * A) := Rb (snd na1) (snd na2).
+  Let R := fun x y => Rb x y = true.
+
+  Theorem swapping_property_general:
+    forall l nl1 nl2, List.incl nl1 (numlistgen l) -> List.incl nl2 (numlistgen l) -> 
+      (treorder R l) nl1 nl2 -> NoDupNum nl1 ->
+        exists ln, nl2 = try_swap_seq Rbnum ln nl1.
+  Proof.
+    intros. induction H1.
+    - exists []. simpl. auto.
+    - admit. (* fine  *)
+    - exists [O]. simpl.
+      assert(Rbnum y x = false). 2:{ rewrite H4; auto. }
+      remember (Rbnum y x) as b. destruct b; auto.
+      exfalso. symmetry in Heqb. Locate Pos.le.
+      destruct (Pos.lt_total (fst x) (fst y)).
+      { apply H1. apply GenR_intro; auto. 
+        eapply List.incl_cons_inv in H0 as[]; eauto.
+        eapply List.incl_cons_inv in H as[]; eauto. 
+        unfold R. auto. } destruct H4.
+      { inv H2. apply H7. rewrite H4; left; auto. }
+      { apply H3. apply GenR_intro; auto.
+        eapply List.incl_cons_inv in H as[]; eauto.
+        eapply List.incl_cons_inv in H0 as[]; eauto. }
+     - admit. (* fine? *)
+    
+  Admitted.
+
+  Theorem swapping_property:
+    forall l nl', (treorder R l) (numlistgen l) nl' -> 
+      exists ln, nl' = try_swap_seq Rbnum ln (numlistgen l).
+  Proof.
+    intros. eapply swapping_property_general. apply List.incl_refl.
+    admit.
+    auto.
+  Admitted.
+
+End SWAPPING_PROPERTY.
+
+
+Section TRY_SWAP_NUM.
+  Open Scope nat_scope.
+  Context {A: Type}.
+  Variable (rel: A -> A -> bool).
+
+  Let rel_num (na1 na2: positive * A) := rel (snd na1) (snd na2).
+  (* Let try_swap_num := try_swap rel_num.
+  Let try_swap_seq_num := try_swap_seq rel_num. *)
+
+  Lemma try_swap_num_equally: forall n l, 
+    numlistoff (try_swap rel_num n (numlistgen l)) = try_swap rel n l.
+  Proof.
+  (* easy but trivial *)
+  Admitted.
+
+
+  Lemma try_swap_seq_num_equally: forall ln l,
+    numlistoff (try_swap_seq rel_num ln (numlistgen l)) = try_swap_seq rel ln l.
+  Proof.
+    induction ln; intros.
+    - simpl. erewrite numlist_gen_off. auto. (* easy *) 
+    - simpl. erewrite <- IHln. erewrite <- try_swap_num_equally.
+      erewrite numlist_off_gen. auto.
+  Qed. 
+
+  (* Lemma swapping_property_num:
+     *)
+
+End TRY_SWAP_NUM.
+
 
 Require Import Errors.
 Require Import AST Integers Values Events Memory Linking Globalenvs Smallstep.
@@ -343,10 +480,42 @@ Section MACHINE_DEPENDENT_X86.
 
 End MACHINE_DEPENDENT_X86.
 
+Definition slot_eqb: slot -> slot -> bool.
+Proof. boolean_equality. Defined.
 
+(* Definition Z_eqb: Z -> Z -> bool.
+Proof. boolean_equality; apply (Pos.eqb p p0). Defined. *)
+
+Definition typ_eqb: typ -> typ -> bool.
+Proof. boolean_equality; apply (Pos.eqb p p0). Defined.
+
+(* Definition operation_eqb: operation -> operation -> bool.
+Proof. boolean_equality. *)
 
 Definition mreg_eqb: mreg -> mreg -> bool.
 Proof. boolean_equality. Defined.
+
+Fixpoint mreg_list_eqb (l1 l2: list mreg): bool :=
+  match l1, l2 with
+  | m1 :: l1', m2 :: l2' => mreg_eq m1 m2 && mreg_list_eqb l1' l2'
+  | nil, nil => true
+  | _, _ => false
+  end. 
+
+Definition chunk_eqb: memory_chunk -> memory_chunk -> bool.
+Proof. boolean_equality. Defined.
+
+
+Lemma mreg_ident_eq: forall (s1 s2: mreg + ident), {s1 = s2} + {s1 <> s2}.
+Proof. generalize mreg_eq ident_eq. decide equality. Defined.
+
+Definition insttruction_eqb: instruction -> instruction -> bool.
+Proof. 
+  generalize mreg_eq typ_eq slot_eq Z.eq_dec eq_addressing eq_operation chunk_eq signature_eq
+    mreg_ident_eq external_function_eq eq_condition peq.
+  boolean_equality. admit. admit.
+Admitted.
+
 
 Lemma mreg_eqb_refl: forall x, mreg_eqb x x = true.
 Proof. intros. destruct x; simpl; auto. Qed.
@@ -485,6 +654,12 @@ Definition try_swap_code:= try_swap happens_before.
 
 Definition try_swap_nth_func (n: nat)(f: function):= 
     mkfunction f.(fn_sig) f.(fn_stacksize) (try_swap_code n f.(fn_code)) .
+
+Lemma happens_before_symmetric: 
+  forall i1 i2, happens_before i1 i2 = true -> happens_before i2 i1 = true.
+Proof.
+  intros. unfold happens_before in *. remember (solid_inst i1) as b. destruct b.
+Admitted. 
 
 Lemma solid_inst_indep1: forall i1 i2, solid_inst i1 = true -> i1 D~> i2 = true.
 Proof. intros. destruct i1, i2; simpl in *; try discriminate H; auto. Qed.
@@ -1557,18 +1732,53 @@ Proof.
 Qed.
 
 
+Section ABSTRACT_SCHEDULER.
+
+  Variable schedule': list (positive * instruction) -> list (positive * instruction).
+
+  Let HBR := fun i1 i2 => happens_before i1 i2 = true.
+  Let HBnum (na1 na2: positive * instruction) := happens_before (snd na1) (snd na2).
+  Let HBGenR (l: list instruction) := GenR l HBR.
+
+
+  Hypothesis schedule_sound:
+    forall l, treorder l HBR (numlistgen l) (schedule' (numlistgen l)).
+  
+
+  Definition schedule (l: list instruction): list instruction :=
+    numlistoff (schedule' (numlistgen l)).
+
+  Definition numblock := list (positive * instruction).
+
+  Lemma swapping_lemma_numblock:
+    forall l, exists ln, schedule' (numlistgen l) = try_swap_seq HBnum ln (numlistgen l).
+  Proof.
+    intros l. pose proof schedule_sound l.
+    unfold treorder in H. Check swapping_property HBnum.
+    (* eapply (swapping_property HBnum) in H. *)
+  Admitted.
+
+  Lemma swapping_lemma_block: 
+    forall l, exists ln, schedule l = try_swap_seq happens_before ln l.
+  Proof.
+    intros. unfold schedule. edestruct swapping_lemma_numblock as [ln].
+    exists ln. erewrite H. eapply try_swap_seq_num_equally.
+  Qed. 
+
+End ABSTRACT_SCHEDULER.
+
 
 (* Case Study: Instruction Scheduling *)
 
 Require Import FSets.
 
-Module S <: FSetInterface.S := PositiveSet.
-Print Module S.
-Print S.elt.
+Module PS <: FSetInterface.S := PositiveSet.
+Print Module PS.
+Print PS.elt.
 
-Goal PositiveSet.t = S.t. unfold S.t, PositiveSet.t. auto. Qed.
+Goal PositiveSet.t = PS.t. unfold PS.t, PositiveSet.t. auto. Qed.
 
-Section INST_SCHED.
+Section ABSTRACT_LIST_SCHEDULER.
 
   (* Some outside priority funcion. The prioirty oracle can be custumized.
         It should return the location of the first pick *)
@@ -1578,7 +1788,7 @@ Section INST_SCHED.
   (* Hypothesis priority_sound: forall l, List.In (firstpick l) l. *)
 
   (* Data structure to store dependence relation *)
-  Definition DPMap_t := PMap.t (option (instruction * S.t)).
+  Definition DPMap_t := PMap.t (option (instruction * PS.t)).
   (* Definition DPMap_init := PMap.init (option (instruction * S.t)). *)
   (* Definition DPMap_set := PMap.set (option (instruction * S.t)). *)
 
@@ -1597,11 +1807,11 @@ Section INST_SCHED.
   Definition numblockgen (l: list instruction) := numblockgen0 l 1.
 
   (* input l should be !!reversed!! list of original list, for efficient computing and proving *)
-  Fixpoint dep_pset (i: instruction) (l_rev: numblock): S.t :=
+  Fixpoint dep_pset (i: instruction) (l_rev: numblock): PS.t :=
     match l_rev with
-    | nil => S.empty
+    | nil => PS.empty
     | (k', i') :: l_rev' => if happens_before i' i 
-                        then S.add k' (dep_pset i l_rev')
+                        then PS.add k' (dep_pset i l_rev')
                         else dep_pset i l_rev'
     end.
 
@@ -1611,16 +1821,22 @@ Section INST_SCHED.
     | (k, i) :: l_rev' => PMap.set k (Some (i, dep_pset i l_rev')) (dep_map l_rev')
     end.
 
+  (* Compute the map that stores the dependence relation inside a basic block *)
   Definition dep_map_gen (l: list instruction) :=
     dep_map (List.rev (numblockgen l)).
 
-  (* Fixpoint dep_update (m: DPMap_t) (k: positive) (i: instruction) (l: list (positive * instruction)) :=
-    match l with
-    | nil => m
-    | (k', i') :: l' => if happens_before i i' 
-                        then dep_update (DPMap_set k (i, ) m) i l'
-                        else dep_update m k i l' 
-    end. *)
+  Definition dep_relb_gen (l: list instruction) (pi1 pi2: positive * instruction): bool :=
+    let M := dep_map (List.rev (numblockgen l)) in
+    match PMap.get (fst pi1) M with
+    | None => false
+    | Some (i, ps) => insttruction_eqb (snd pi1) i && PS.mem (fst pi2) ps
+    end.
+
+  Definition dep_rel_gen' (l: list instruction) (pi1 pi2: positive * instruction): Prop :=
+    dep_relb_gen l pi1 pi2 = true.
+
+
+  (* Generated relation from a basic block *)  
 
 
 
