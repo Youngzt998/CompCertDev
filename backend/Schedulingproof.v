@@ -886,10 +886,24 @@ Definition transf_fundef_try_swap_nth (n: nat) (f: fundef) : res fundef :=
   AST.transf_partial_fundef (transf_function_try_swap_nth n) f.
 
 (** only swap one independent pair in one function *)
-Definition transf_program_try_swap_nth_in_one (funid: ident) (n: nat) (p: program): res program :=
+(* Definition transf_program_try_swap_nth_in_one (funid: ident) (n: nat) (p: program): res program :=
   transform_partial_program2 
   (fun i f => if ident_eq i funid then transf_fundef_try_swap_nth n f else OK f) 
-  (fun i v => OK v) p.
+  (fun i v => OK v) p. *)
+Fixpoint try_swap_prog_def_in_one (pos: nat) (n: nat) 
+                  (prog_defs: list (ident * globdef fundef unit)): 
+                  list (ident * globdef fundef unit) :=
+  match pos, prog_defs with
+  | _, nil => nil
+  | Datatypes.S pos', prog_def :: prog_defs' => 
+                        prog_def :: try_swap_prog_def_in_one pos' n prog_defs'
+  | Datatypes.O, (id, Gfun (Internal f)) :: prog_defs' => 
+                        (id, Gfun (Internal (try_swap_nth_func n f))) :: prog_defs'
+  | Datatypes.O, _ => prog_defs
+  end.
+
+Definition transf_program_try_swap_nth_in_one (pos: nat) (n: nat) (p: program): res program :=
+  OK (mkprogram (try_swap_prog_def_in_one pos n p.(prog_defs)) p.(prog_public) p.(prog_main)).
 
 Inductive match_fundef0: fundef -> fundef -> Prop :=
   | match_fundef0_internal: forall n f,
@@ -902,6 +916,8 @@ Inductive match_fundef (p: program): fundef -> fundef -> Prop :=
       match_fundef p (Internal f) (Internal (try_swap_nth_func n f))
   | match_fundef_external: forall f, match_fundef p (External f) (External f)
 .
+
+Definition match_varinfo: unit -> unit -> Prop := eq.
 
 Lemma match_fundef_refl: forall p f, match_fundef p f f.
 Proof. 
@@ -917,13 +933,22 @@ Proof.
   - eapply match_fundef_external.
 Qed.
 
+
+
+Lemma match_globdef_refl: forall ctx def, match_globdef match_fundef match_varinfo ctx def def.
+Proof.
+  intros. destruct def.
+  - eapply match_globdef_fun. eapply linkorder_refl.
+    eapply match_fundef_refl.
+  - eapply match_globdef_var. 
+    destruct v. simpl. eapply match_globvar_intro. eapply eq_refl.
+Qed.
+
 Lemma match_fundef_funsig: forall p f tf, match_fundef p f tf -> funsig f = funsig tf.
 Proof. intros. inv H; auto. Qed.
 
 Lemma match_fundef_match_fundef0: forall p f tf, match_fundef p f tf -> match_fundef0 f tf.
 Proof. intros. inv H. eapply match_fundef0_internal. eapply match_fundef0_external. Qed.
-
-Definition match_varinfo: unit -> unit -> Prop := eq.
 
 Inductive match_stackframe: stackframe -> stackframe -> Prop :=
   | match_stackframes_intro:
@@ -979,18 +1004,48 @@ Definition match_prog (prog tprog: program) :=
   let transf_var := (fun (i: ident) (v:unit) => OK v) in *)
   match_program_gen match_fundef match_varinfo prog prog tprog.
 
+
+Lemma match_ident_globdefs_refl:
+  forall prog_defs ctx, list_forall2
+  (match_ident_globdef match_fundef match_varinfo ctx) prog_defs prog_defs.
+Proof.
+  induction prog_defs; intros.
+  - eapply list_forall2_nil.
+  - eapply list_forall2_cons. split; auto. eapply match_globdef_refl.
+    eapply IHprog_defs.
+Qed.
+
+Lemma try_swap_prog_def_nil: forall pos n, try_swap_prog_def_in_one pos n [] = [].
+Proof. induction pos; intros; simpl; auto. Qed.
+
+
+Lemma transf_program_match':
+forall prog_defs pos n ctx,
+list_forall2 (match_ident_globdef match_fundef match_varinfo ctx) 
+              prog_defs (try_swap_prog_def_in_one pos n prog_defs).
+Proof.
+  induction prog_defs; intros.
+  - rewrite try_swap_prog_def_nil. eapply list_forall2_nil.
+  - destruct pos. 
+    + destruct a. destruct g. destruct f.
+      { simpl. eapply list_forall2_cons. split; auto. 
+      eapply match_globdef_fun. eapply linkorder_refl.
+      eapply match_fundef_internal. eapply match_ident_globdefs_refl. }
+      { simpl. eapply match_ident_globdefs_refl. }
+      { simpl. eapply match_ident_globdefs_refl. }
+    + simpl. eapply list_forall2_cons. split; auto. eapply match_globdef_refl.
+      eapply IHprog_defs.
+Qed.
+
 Lemma transf_program_match:
-forall funid n prog tprog, 
-  transf_program_try_swap_nth_in_one funid n prog = OK tprog -> 
+forall pos n prog tprog, 
+  transf_program_try_swap_nth_in_one pos n prog = OK tprog -> 
     match_prog prog tprog.
 Proof.
-    intros. 
-    eapply match_transform_partial_program2. eapply H.
-    2: { intros. simpl in H0. inv H0; apply eq_refl. }
-    intros. simpl in H0. destruct (ident_eq).
-    - destruct f; inv H0.
-      apply match_fundef_internal. apply match_fundef_external.
-    - inv H0; apply match_fundef_refl.
+    intros. split. unfold transf_program_try_swap_nth_in_one in H; inv H; simpl. 
+    eapply transf_program_match'.
+    destruct prog. unfold transf_program_try_swap_nth_in_one in H; simpl in H; inv H.
+    split; auto.
 Qed.
 
 Require Import Globalenvs.
@@ -1692,18 +1747,19 @@ End SINGLE_SWAP_CORRECTNESS.
 
 
 Lemma transf_program_single_swap_forward_simulation:
-  forall funid n prog tprog, 
-    transf_program_try_swap_nth_in_one funid n prog = OK tprog ->
+  forall pos n prog tprog, 
+    transf_program_try_swap_nth_in_one pos n prog = OK tprog ->
     forward_simulation (Linear.semantics prog) (Linear.semantics tprog).
 Proof.
   intros. eapply forward_simulation_safe_swap.
   eapply transf_program_match; eauto.
 Qed.
 
-Fixpoint transf_program_try_swap_seq (seq: list (ident * nat) ) (prog: program):=
+(* [pos1, n1] :: [pos2, n2] :: ... *)
+Fixpoint transf_program_try_swap_seq (seq: list (nat * nat) ) (prog: program):=
   match seq with
   | [] => OK prog
-  | (id, n) :: seq' => do prog' <- transf_program_try_swap_nth_in_one id n prog;
+  | (pos, n) :: seq' => do prog' <- transf_program_try_swap_nth_in_one pos n prog;
                        transf_program_try_swap_seq seq' prog'
   end.
 
@@ -1712,11 +1768,18 @@ Lemma transf_program_multi_swap_forward_simulation:
   transf_program_try_swap_seq seq prog = OK tprog ->
     forward_simulation (Linear.semantics prog) (Linear.semantics tprog).
 Proof.
-  induction seq; intros; simpl in H; auto.
-  - inv H. apply forward_simulation_refl.
-  - destruct a. monadInv H.
-    eapply compose_forward_simulations with (L2:= semantics x); auto. 
+  induction seq.
+  - intros. inv H. apply forward_simulation_refl.
+  - intros. simpl in H. destruct a as [pos n].
+    eapply IHseq in H.
+    set (prog' := {|
+      prog_defs := try_swap_prog_def_in_one pos n (prog_defs prog);
+      prog_public := prog_public prog;
+      prog_main := prog_main prog
+    |}). fold prog' in H.
+    eapply compose_forward_simulations with (L2:= semantics prog'); auto. 
     eapply transf_program_single_swap_forward_simulation; eauto.
+    unfold transf_program_try_swap_nth_in_one. unfold prog'. eauto.
 Qed.
 
 
@@ -1866,7 +1929,8 @@ Section ABSTRACT_SCHEDULER.
         prog_public := prog_public; prog_main := prog_main |} in
     let seq0 := map (fun n : nat => (i, n)) ln in
   transf_program_try_swap_seq seq0 prog = OK prog'.
-  { intro. induction ln; intros.
+  Proof.
+    intro. induction ln; intros.
     - simpl in seq0. destruct f; auto.
     - unfold seq0. 
       specialize (IHln i (try_swap_nth_func a f) prog_defs prog_public prog_main). 
@@ -1874,13 +1938,15 @@ Section ABSTRACT_SCHEDULER.
       unfold prog. unfold transf_program_try_swap_nth_in_one.
       unfold transform_partial_program2. simpl.
       destruct (ident_eq i i). 2: { exfalso; apply n; auto. }
-      simpl in IHln.
-      unfold prog. unfold prog'.
-
-      unfold transf_globdefs.
       simpl.
+      assert(transf_globdefs
+        (fun (i0 : ident) (f0 : fundef) =>
+        if ident_eq i0 i then transf_fundef_try_swap_nth a f0 else OK f0)
+        (fun (_ : ident) (v : unit) => OK v) prog_defs = OK prog_defs).
+      2: { rewrite H. simpl. eapply IHln. }
 
-  }
+
+  Admitted.
 
   Lemma schedule_program_swapping_lemma:
     forall prog tprog: program, schedule_program prog = OK tprog -> 
@@ -1912,7 +1978,7 @@ Section ABSTRACT_SCHEDULER.
           assert( transf_program_try_swap_seq seq0 prog = OK prog').
           { induction ln.
             - simpl in seq0. destruct f; auto.
-            - unfold prog. simpl. rewrite <- IHln. auto.
+            - unfold prog. simpl. auto.
 
           }
 
