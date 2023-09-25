@@ -322,9 +322,9 @@ Section SWAPPING_PROPERTY.
     forall l nl', (treorder R l) (numlistgen l) nl' -> 
       exists ln, nl' = try_swap_seq Rbnum ln (numlistgen l).
   Proof.
-    intros. eapply swapping_property_general. apply List.incl_refl.
+    intros. eapply swapping_property_general; eauto. apply List.incl_refl.
     admit.
-    auto.
+    auto. eapply numbered_list_nodup_number.
   Admitted.
 
 End SWAPPING_PROPERTY.
@@ -890,7 +890,7 @@ Definition transf_fundef_try_swap_nth (n: nat) (f: fundef) : res fundef :=
   transform_partial_program2 
   (fun i f => if ident_eq i funid then transf_fundef_try_swap_nth n f else OK f) 
   (fun i v => OK v) p. *)
-Fixpoint try_swap_prog_def_in_one (pos: nat) (n: nat) 
+Fixpoint try_swap_prog_def_in_one (pos: nat) (n: nat)
                   (prog_defs: list (ident * globdef fundef unit)): 
                   list (ident * globdef fundef unit) :=
   match pos, prog_defs with
@@ -902,8 +902,18 @@ Fixpoint try_swap_prog_def_in_one (pos: nat) (n: nat)
   | Datatypes.O, _ => prog_defs
   end.
 
-Definition transf_program_try_swap_nth_in_one (pos: nat) (n: nat) (p: program): res program :=
+Fixpoint try_swap_prog_def_seq (seq: list (nat * nat))
+                  (prog_defs: list (ident * globdef fundef unit)):=
+  match seq with
+  | nil => prog_defs
+  | (pos, n) :: seq' => try_swap_prog_def_seq seq' (try_swap_prog_def_in_one pos n prog_defs)
+  end.
+
+Definition transf_program_try_swap_in_one (pos: nat) (n: nat) (p: program): res program :=
   OK (mkprogram (try_swap_prog_def_in_one pos n p.(prog_defs)) p.(prog_public) p.(prog_main)).
+
+Definition transf_program_try_swap_seq (seq: list (nat * nat)) (p: program): res program :=
+  OK (mkprogram (try_swap_prog_def_seq seq p.(prog_defs)) p.(prog_public) p.(prog_main) ).
 
 Inductive match_fundef0: fundef -> fundef -> Prop :=
   | match_fundef0_internal: forall n f,
@@ -1039,12 +1049,12 @@ Qed.
 
 Lemma transf_program_match:
 forall pos n prog tprog, 
-  transf_program_try_swap_nth_in_one pos n prog = OK tprog -> 
+  transf_program_try_swap_in_one pos n prog = OK tprog -> 
     match_prog prog tprog.
 Proof.
-    intros. split. unfold transf_program_try_swap_nth_in_one in H; inv H; simpl. 
+    intros. split. unfold transf_program_try_swap_in_one in H; inv H; simpl. 
     eapply transf_program_match'.
-    destruct prog. unfold transf_program_try_swap_nth_in_one in H; simpl in H; inv H.
+    destruct prog. unfold transf_program_try_swap_in_one in H; simpl in H; inv H.
     split; auto.
 Qed.
 
@@ -1748,24 +1758,46 @@ End SINGLE_SWAP_CORRECTNESS.
 
 Lemma transf_program_single_swap_forward_simulation:
   forall pos n prog tprog, 
-    transf_program_try_swap_nth_in_one pos n prog = OK tprog ->
+    transf_program_try_swap_in_one pos n prog = OK tprog ->
     forward_simulation (Linear.semantics prog) (Linear.semantics tprog).
 Proof.
   intros. eapply forward_simulation_safe_swap.
   eapply transf_program_match; eauto.
 Qed.
 
-(* [pos1, n1] :: [pos2, n2] :: ... *)
-Fixpoint transf_program_try_swap_seq (seq: list (nat * nat) ) (prog: program):=
-  match seq with
-  | [] => OK prog
-  | (pos, n) :: seq' => do prog' <- transf_program_try_swap_nth_in_one pos n prog;
-                       transf_program_try_swap_seq seq' prog'
-  end.
 
 Lemma transf_program_multi_swap_forward_simulation:
-  forall seq prog tprog, 
+  forall seq prog tprog,
   transf_program_try_swap_seq seq prog = OK tprog ->
+    forward_simulation (Linear.semantics prog) (Linear.semantics tprog).
+Proof.
+  induction seq.
+  - intros. inv H. destruct prog; apply forward_simulation_refl.
+  - intros. destruct prog. destruct a as [pos n]. 
+  unfold transf_program_try_swap_seq in H; simpl in H. inv H.
+  set (prog' := {|
+      prog_defs := try_swap_prog_def_in_one pos n prog_defs;
+      prog_public := prog_public;
+      prog_main := prog_main
+    |}).
+  eapply compose_forward_simulations with (L2:= semantics prog'); auto.
+  eapply transf_program_single_swap_forward_simulation; unfold prog'.
+  unfold transf_program_try_swap_in_one; eauto.
+Qed.
+
+(* [pos1, n1] :: [pos2, n2] :: ... 
+   1st aug: try swap at which program definition (do nothing if not a internal function)
+   2nd aug: try swap at which location of that funtion's code *)
+Fixpoint transf_program_try_swap_seq1 (seq: list (nat * nat) ) (prog: program):=
+  match seq with
+  | [] => OK prog
+  | (pos, n) :: seq' => do prog' <- transf_program_try_swap_in_one pos n prog;
+                       transf_program_try_swap_seq1 seq' prog'
+  end.
+
+Lemma transf_program_multi_swap_forward_simulation1:
+  forall seq prog tprog, 
+  transf_program_try_swap_seq1 seq prog = OK tprog ->
     forward_simulation (Linear.semantics prog) (Linear.semantics tprog).
 Proof.
   induction seq.
@@ -1779,19 +1811,23 @@ Proof.
     |}). fold prog' in H.
     eapply compose_forward_simulations with (L2:= semantics prog'); auto. 
     eapply transf_program_single_swap_forward_simulation; eauto.
-    unfold transf_program_try_swap_nth_in_one. unfold prog'. eauto.
+    unfold transf_program_try_swap_in_one. unfold prog'. eauto.
 Qed.
 
 
 Section ABSTRACT_SCHEDULER.
 
   Variable schedule': list (positive * instruction) -> list (positive * instruction).
+    (* list (positive * instruction) -> (* already scheduled instruction*)
+      list (positive * instruction) ->  (* valid to schedule as next instruction *)
+        list (positive * instruction) ->  (* full original codes in the function *)
+          option positive.  which one in valid-instrucion-list (2nd augument) to pick next *)
 
   Let HBR := fun i1 i2 => happens_before i1 i2 = true.
   Let HBnum (na1 na2: positive * instruction) := happens_before (snd na1) (snd na2).
   Let HBGenR (l: list instruction) := GenR HBR l.
 
-  Hypothesis schedule_sound:
+  Hypothesis schedule_valid:
     forall l, treorder HBR l (numlistgen l) (schedule' (numlistgen l)).
   
   Definition schedule (l: list instruction): list instruction :=
@@ -1812,9 +1848,9 @@ Section ABSTRACT_SCHEDULER.
   Lemma swapping_lemma_numblock:
     forall l, exists ln, schedule' (numlistgen l) = try_swap_seq HBnum ln (numlistgen l).
   Proof.
-    intros l. pose proof schedule_sound l.
-    unfold treorder in H. Check swapping_property HBnum.
-    eapply (swapping_property ) in H as [ln]. exists ln; auto.
+    intros l. pose proof schedule_valid l.
+    unfold treorder in H.
+    eapply swapping_property in H as [ln]. exists ln; auto.
     apply happens_before_symmetric.
   Qed.
 
@@ -1823,8 +1859,10 @@ Section ABSTRACT_SCHEDULER.
   Proof.
     intros. unfold schedule. edestruct swapping_lemma_numblock as [ln].
     exists ln. erewrite H. eapply try_swap_seq_num_equally.
-  Qed. 
-  Check transf_program_try_swap_seq.
+  Qed.
+
+  (* Definition schedule_global_defs (defs: list (ident * globdef fundef unit)) := 
+      transf_globdefs  . *)
 
   (* schedule one function *)
   Definition schedule_program_in_one (funid: ident) (p: program): res program :=
@@ -1848,143 +1886,111 @@ Section ABSTRACT_SCHEDULER.
 
   Definition program_funid_list (p: program) := funid_list p.(prog_defs).
 
-  (* Lemma transf_fundef_try_swap_nth_no_error: forall n f,
-    exists f', transf_fundef_try_swap_nth n f = OK f'.
+  Lemma schedule_program_swapping_lemma_prepare1:
+    forall seq def prog_defs,
+    let seq':= map (fun x => ((Datatypes.S (fst x)), snd x)) seq in
+    try_swap_prog_def_seq seq' (def :: prog_defs)
+     = def :: (try_swap_prog_def_seq seq prog_defs).
   Proof.
-    intros. destruct f.
-    - simpl. exists (Internal (try_swap_nth_func n f)); auto.
-    - exists (External e). simpl; auto.
+    induction seq.
+    - intros. simpl; auto.
+    - intros. destruct a as [pos n]. simpl in seq'. unfold seq'. simpl.
+      erewrite IHseq; eauto.
   Qed.
 
-  Lemma transf_program_try_swap_nth_in_one_no_error: forall id n prog,
-    exists prog', transf_program_try_swap_nth_in_one id n prog = OK prog'.
+  Lemma schedule_program_swapping_lemma_prepare2:
+  forall ln prog_defs i f,
+    let seq := List.map (fun n => (O, n)) ln in
+    let prog_defs':= (i, Gfun (Internal f)) :: prog_defs in
+    let prog_defs'' := 
+    (i, Gfun (Internal {| fn_sig := fn_sig f;
+                          fn_stacksize := fn_stacksize f;
+                          fn_code := try_swap_seq happens_before ln (fn_code f) |}))
+    :: prog_defs in
+      try_swap_prog_def_seq seq prog_defs' = prog_defs''.
   Proof.
-    intros. destruct prog. unfold transf_program_try_swap_nth_in_one.
-    unfold transform_partial_program2. simpl.
-    assert(TMP: forall n, exists prog_defs', transf_globdefs
-      (fun (i : ident) (f : fundef) =>
-      if ident_eq i id then transf_fundef_try_swap_nth n f else OK f)
-      (fun (_ : ident) (v : unit) => OK v) prog_defs = OK prog_defs').
-    { intros. induction prog_defs.
-      - simpl. exists []; auto.
-      - destruct IHprog_defs. destruct a. destruct g. 
-        + simpl. destruct (ident_eq i id). 
-          { subst. edestruct transf_fundef_try_swap_nth_no_error. rewrite H0.
-          simpl. rewrite H. exists ((id, Gfun x0) :: x). simpl. auto. }
-          { rewrite H. exists ((i, Gfun f) :: x). simpl; auto. }
-        + exists ((i, Gvar v) :: x). simpl. rewrite H. simpl. destruct v; simpl; auto.
-    }
-    destruct (TMP n). rewrite H. simpl. 
-    exists ({| prog_defs := x; prog_public := prog_public; prog_main := prog_main |}); auto. 
-  Qed. *)
-
-  Lemma transf_program_try_swap_two_seq: forall seq seq' prog prog' prog'', 
-    transf_program_try_swap_seq seq prog = OK prog' -> 
-    transf_program_try_swap_seq seq' prog' = OK prog'' ->
-    transf_program_try_swap_seq (seq ++ seq') prog = OK prog''.
-  Proof.
-    intro. induction seq; intros.
-    - simpl in *. inv H; auto.
-    - simpl in H. destruct a. monadInv H.
-      simpl. rewrite EQ; simpl. eapply IHseq; eauto.
+    induction ln.
+    - intros. unfold prog_defs', prog_defs''. simpl; destruct f; auto.
+    - intros. simpl in seq. unfold seq. 
+      unfold prog_defs'. simpl. unfold prog_defs''. simpl.
+      erewrite IHln; eauto.
   Qed.
 
-  Lemma schedule_program_no_error:
-    forall prog, exists tprog, schedule_program prog = OK tprog.
-  Proof. 
-    intros. destruct prog. induction prog_defs.
-    - unfold schedule_program; unfold transform_partial_program2; simpl.
-      exists ({| prog_defs := []; prog_public := prog_public; prog_main := prog_main |}); auto.
-    - destruct IHprog_defs as [tprog].
-
-    (* (* unfold schedule_program; unfold transform_partial_program2; simpl. *)
-
-  
-  remember (schedule_program prog) as res_tprog. 
-    destruct res_tprog. exists p; auto.
-
-  destruct (schedule_program prog). destruct prog. *)
-  Admitted.
-
-  (* Lemma schedule_program_split:
-    forall prog tprog: program, schedule_program prog = OK tprog -> 
-      exists seq: list ident, schedule_program_seq seq prog = OK tprog.
+  Lemma schedule_program_swapping_lemma_prepare3:
+  forall seq seq' prog_defs prog_defs' prog_defs'', 
+    try_swap_prog_def_seq seq prog_defs = prog_defs' ->
+      try_swap_prog_def_seq seq' prog_defs' = prog_defs'' ->
+        try_swap_prog_def_seq (seq ++ seq') prog_defs = prog_defs''.
   Proof.
-    intros.
-    exists (funid_list prog.(prog_defs)). rewrite <- H. destruct prog.
-    induction (prog_defs). simpl. auto.
-
-  Admitted. *)
-
-  Lemma schedule_program_swapping_lemma_prepare: 
-  forall ln i f prog_defs prog_public prog_main,
-    let prog :={| prog_defs := (i, Gfun (Internal f)) :: prog_defs;
-                prog_public := prog_public; prog_main := prog_main |} in
-    let prog' := {|
-        prog_defs :=
-          (i, Gfun (Internal {| fn_sig := fn_sig f;
-                fn_stacksize := fn_stacksize f;
-                fn_code := try_swap_seq happens_before ln (fn_code f)
-              |})) :: prog_defs;
-        prog_public := prog_public; prog_main := prog_main |} in
-    let seq0 := map (fun n : nat => (i, n)) ln in
-  transf_program_try_swap_seq seq0 prog = OK prog'.
-  Proof.
-    intro. induction ln; intros.
-    - simpl in seq0. destruct f; auto.
-    - unfold seq0. 
-      specialize (IHln i (try_swap_nth_func a f) prog_defs prog_public prog_main). 
-      simpl map. simpl.
-      unfold prog. unfold transf_program_try_swap_nth_in_one.
-      unfold transform_partial_program2. simpl.
-      destruct (ident_eq i i). 2: { exfalso; apply n; auto. }
-      simpl.
-      assert(transf_globdefs
-        (fun (i0 : ident) (f0 : fundef) =>
-        if ident_eq i0 i then transf_fundef_try_swap_nth a f0 else OK f0)
-        (fun (_ : ident) (v : unit) => OK v) prog_defs = OK prog_defs).
-      2: { rewrite H. simpl. eapply IHln. }
-
-
-  Admitted.
+    intro; induction seq; intros.
+    - simpl in *. subst; auto.
+    - destruct a as [pos n]. simpl in *. eapply IHseq; eauto.
+  Qed.
 
   Lemma schedule_program_swapping_lemma:
-    forall prog tprog: program, schedule_program prog = OK tprog -> 
-      exists seq: list (ident * nat), transf_program_try_swap_seq seq prog = OK tprog.
+  forall prog tprog: program, schedule_program prog = OK tprog -> 
+    exists seq: list (nat * nat), transf_program_try_swap_seq seq prog = OK tprog.
   Proof.
     intros prog. destruct prog. induction prog_defs.
-    - exists []. simpl; auto.
-    - intros. unfold schedule_program in H. simpl in H. destruct a. destruct g. 
-      { monadInv H. simpl in EQ. destruct f; simpl in EQ.
-        - monadInv EQ.
-          set(tprog := {| prog_defs := x0; prog_public := prog_public;
-              prog_main := prog_main |}).
-          destruct (IHprog_defs tprog) as [seq']; eauto. unfold schedule_program.
-          unfold transform_partial_program2; simpl. rewrite EQ0. simpl. auto.
-          destruct (swapping_lemma_block (fn_code f)) as [ln].
-          set(seq0 := List.map (fun n => (i, n)) ln).
-          exists (seq0 ++ seq'). rewrite H0. clear H0.
-
-          set(prog :={| prog_defs := (i, Gfun (Internal f)) :: prog_defs;
-            prog_public := prog_public; prog_main := prog_main |}).
-          set(prog' := {|
-            prog_defs :=
-              (i, Gfun (Internal {| fn_sig := fn_sig f;
-                     fn_stacksize := fn_stacksize f;
-                     fn_code := try_swap_seq happens_before ln (fn_code f)
-                   |})) :: prog_defs;
-            prog_public := prog_public; prog_main := prog_main |}).
-          (* revert H0. revert f. *)
-          assert( transf_program_try_swap_seq seq0 prog = OK prog').
-          { induction ln.
-            - simpl in seq0. destruct f; auto.
-            - unfold prog. simpl. auto.
-
-          }
-
-        - monadInv EQ. admit. }
-      { monadInv H. simpl in EQ. monadInv EQ. simpl in EQ0.  admit. }
-  Admitted.
+    - intros. exists []. simpl. unfold transf_program_try_swap_seq; simpl; auto.
+    - intros. unfold schedule_program in H. monadInv H.
+      destruct a. destruct g. destruct f.
+      { simpl in EQ. monadInv EQ. 
+        set(prog' :={| prog_defs := x0; prog_public := prog_public;
+          prog_main := prog_main |}).
+        specialize (IHprog_defs prog'). destruct IHprog_defs as [seq0]; auto.
+        unfold schedule_program. unfold transform_partial_program2. simpl.
+        rewrite EQ0; simpl; auto.
+        inv H. set(seq0' := List.map (fun x => (Datatypes.S (fst x), snd x)) seq0 ).
+        pose proof swapping_lemma_block (fn_code f) as [ln]. rewrite H.
+        set(seq1 := List.map (fun n => (O, n)) ln).
+        exists (seq0' ++ seq1).
+        unfold transf_program_try_swap_seq; simpl.
+        set(prog_defs0 := (i, Gfun (Internal f)) :: prog_defs).
+        set (prog_defs1 := (i, Gfun (Internal f))  :: try_swap_prog_def_seq seq0 prog_defs).
+        set(prog_defs2 := (i,
+                  Gfun
+                    (Internal
+                      {|
+                        fn_sig := fn_sig f;
+                        fn_stacksize := fn_stacksize f;
+                        fn_code := try_swap_seq happens_before ln (fn_code f)
+                      |})) :: try_swap_prog_def_seq seq0 prog_defs
+        ).
+        assert(try_swap_prog_def_seq seq0' prog_defs0 = prog_defs1).
+        { eapply schedule_program_swapping_lemma_prepare1. }
+        assert(try_swap_prog_def_seq seq1 prog_defs1 = prog_defs2).
+        eapply schedule_program_swapping_lemma_prepare2; eauto.
+        erewrite schedule_program_swapping_lemma_prepare3; eauto.
+      }
+      { simpl in EQ. monadInv EQ.
+        set(prog' :={| prog_defs := x0; prog_public := prog_public;
+        prog_main := prog_main |}).
+        specialize (IHprog_defs prog'). destruct IHprog_defs as [seq0]; auto.
+        unfold schedule_program. unfold transform_partial_program2. simpl.
+        rewrite EQ0; simpl; auto.
+        inv H. set(seq0' := List.map (fun x => (Datatypes.S (fst x), snd x)) seq0 ).
+        exists (seq0').
+        unfold transf_program_try_swap_seq; simpl.
+        erewrite <- schedule_program_swapping_lemma_prepare1; eauto.
+      }
+      { simpl in EQ. monadInv EQ.
+        set(prog' :={| prog_defs := x0; prog_public := prog_public;
+        prog_main := prog_main |}).
+        specialize (IHprog_defs prog'). destruct IHprog_defs as [seq0]; auto.
+        unfold schedule_program. unfold transform_partial_program2. simpl.
+        rewrite EQ0; simpl; auto.
+        inv H. set(seq0' := List.map (fun x => (Datatypes.S (fst x), snd x)) seq0 ).
+        exists (seq0'). 
+        assert(V: v = {|
+          gvar_info := gvar_info v;
+          gvar_init := gvar_init v;
+          gvar_readonly := gvar_readonly v;
+          gvar_volatile := gvar_volatile v
+        |}). destruct v; auto. rewrite <- V.
+        erewrite <- schedule_program_swapping_lemma_prepare1; eauto.
+      }
+  Qed.
   
   Theorem schedule_program_forward_simulation:
     forall prog tprog: program, schedule_program prog = OK tprog ->
@@ -1995,7 +2001,6 @@ Section ABSTRACT_SCHEDULER.
   Qed.
 
 End ABSTRACT_SCHEDULER.
-
 
 
 
