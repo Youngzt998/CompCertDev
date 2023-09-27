@@ -114,15 +114,15 @@ Section TRY_SWAP.
     | n :: ln' => try_swap_seq ln' (try_swap n la)
     end.
 
-  (* Theorem swapping_property: 
-  let R := fun x y => rel x y = true in
-    forall l l', topo_reorder A R l l' -> exists ln, l' = try_swap_seq ln l.
-  Proof.
-    intros. induction H.
-    - exists []; auto.
-    - destruct IHtopo_reorder as [ln]. admit. (* fine *)
-    - exists [0]. simpl. unfold R in H, H0.
-  Admitted. *)
+  Lemma try_swap_seq_nil: forall ln, try_swap_seq ln [] = [].
+  Proof. induction ln; simpl; auto. rewrite try_swap_nil; auto. Qed.
+
+  Lemma try_swap_seq_singleton: forall ln x, try_swap_seq ln [x] = [x].
+  Proof. induction ln; simpl; auto. intros. rewrite try_swap_singleton; auto. Qed.
+
+  Lemma try_swap_app: forall ln1 ln2 l,
+    try_swap_seq (ln1 ++ ln2) l = try_swap_seq ln2 (try_swap_seq ln1 l).
+  Proof. induction ln1; intros; simpl; auto. Qed.
 
 End TRY_SWAP.
 
@@ -133,17 +133,37 @@ Section TOPO_REORDER.
   Context {A: Type}.
   Variable R: A -> A -> Prop.
 
-  (* not greater than *)
+  Hypothesis Rtrans: forall x y z, R x y -> R y z -> R x z.
+
+  (* not greater than any elements in list *)
   Inductive ngt (a: A): list A -> Prop :=
   | ngt_nil: ngt a []
-  | ngt_l: forall x, ~ R x a -> ngt a [x]
+  | ngt_l: forall x, ~ R x a -> ngt a [x]  (* TODO: delete this redundant constructor *)
   | ngt_cons: forall x l, ngt a l -> ~ R x a -> ngt a (x :: l)  
   .
 
+  (* equivlent definition *)
+  Definition ngt' (a: A) (l: list A) := forall x, In x l  -> ~ R x a.
+
+  Lemma ngt_ngt': forall l a, ngt a l -> ngt' a l.
+  Proof.
+    induction l; intros; simpl. intro; intros. intro; auto.
+    inv H. intro; intros. destruct H; subst; auto.
+    eapply IHl in H2. intro; intros. destruct H; subst; auto.
+  Qed.
+
+  Lemma ngt'_ngt: forall l a, ngt' a l -> ngt a l.
+  Proof.
+    induction l; intros. apply ngt_nil.
+    apply ngt_cons. eapply IHl. unfold ngt' in H.
+    intro; intros. eapply H. right; auto.
+    apply H; left; auto.
+  Qed.
+
   Inductive topo_sorted: list A -> Prop :=
   | topo_sorted_nil: topo_sorted []
-  | topo_sorted_l: forall x, topo_sorted [x]
-  | topo_sorted_cons: forall x y l, ~ R y x -> topo_sorted (y::l) -> topo_sorted (x :: y :: l)
+  (* | topo_sorted_l: forall x, topo_sorted [x] *)
+  | topo_sorted_cons: forall x l, ngt x l -> topo_sorted l -> topo_sorted (x :: l)
   .
 
   Inductive topo_reorder : list A -> list A -> Prop :=
@@ -160,26 +180,59 @@ Section TOPO_REORDER.
   (* | topo_reorder_trans l l' l'' :
       topo_reorder l l' -> topo_reorder l' l'' -> topo_reorder l l''. *)
 
-  Fixpoint swap (n: nat) (l: list A): list A :=
-    match n, l with
-    | _, nil => nil | _, i :: nil => l
-    | O, i1 :: i2 :: l' => i2 :: i1 :: l'
-    | Datatypes.S n', i :: l' => i :: swap n' l'
-    end.
-
-  Fixpoint swap_seq (ln: list nat) (la: list A) :=
-    match ln with
-    | [] => la
-    | n :: ln' => swap_seq ln' (swap n la)
-    end.
-
-  (* TODO: l need to be sorted already *)
-  (* Lemma topo_reorder_refl: forall l, topo_reorder l l.
-  Proof. induction l. apply topo_reorder_nil. Admitted. *)
+  Lemma ngt_cons_inv: forall x x0 l, ngt x (x0 :: l) -> ngt x l /\ ~R x0 x.
+  Proof.
+    intros. inversion H.
+    - subst. split; auto. apply ngt_nil.
+    - subst. auto.
+  Qed.
 
   Lemma topo_reorder_is_permutation: forall l l', topo_reorder l l' -> Permutation l l'.
   Proof. intros. induction H. apply perm_nil. apply perm_skip; auto.
     - apply perm_swap. - eapply perm_trans; eauto. Qed.
+
+  Lemma topo_reorder_incl: forall l l', topo_reorder l l' -> List.incl l l'.
+  Proof.
+    intros. induction H.
+    - apply incl_refl. - apply incl_cons. left; auto. right; auto.
+    - apply incl_cons. right. left; auto. intro; intro. destruct H1. 
+      subst. left; auto. right; right; auto.
+    - eapply incl_tran; eauto.
+  Qed.
+
+  Lemma topo_reorder_ngt_preserved:
+    forall x l l', topo_reorder l l' -> ngt x l -> ngt x l'.
+  Proof.
+    intros. induction H. - apply ngt_nil.
+    - apply ngt_cons_inv in H0 as []; auto. eapply ngt_cons; auto.
+    - inv H0. inv H4. eapply ngt_cons; auto. eapply ngt_cons; auto. eapply ngt_nil.
+      eapply ngt_cons; auto. eapply ngt_cons; auto.
+    - eapply IHtopo_reorder1 in H0. eapply IHtopo_reorder2 in H0. auto.
+  Qed.
+
+  Lemma topo_reorder_symmetry: forall l l', topo_reorder l l' -> topo_reorder l' l.
+  Proof.
+    intros. induction H.
+    - apply topo_reorder_nil.
+    - apply topo_reorder_skip; auto. eapply topo_reorder_ngt_preserved; eauto.
+    - apply topo_reorder_swap; auto.
+    - eapply topo_reorder_trans; eauto.
+  Qed.
+
+  Lemma topo_sorted_cons_inv:
+    forall x l, topo_sorted (x :: l) -> ngt x l /\ topo_sorted l.
+  Proof. intros. inv H. split; auto. Qed. 
+
+  Lemma topo_reorder_sort_preserved:
+    forall l l', topo_reorder l l' -> topo_sorted l ->  topo_sorted l'.
+  Proof.
+    intros. induction H; simpl; auto.
+    - eapply topo_sorted_cons_inv in H0 as [].
+      eapply topo_sorted_cons.
+      eapply topo_reorder_ngt_preserved; eauto. eapply IHtopo_reorder; auto.
+    - inv H0. inv H5. eapply topo_sorted_cons. eapply ngt_cons; auto.
+      eapply topo_sorted_cons; eauto. eapply ngt_cons_inv; eauto.
+  Qed.
 
 End TOPO_REORDER.
 
@@ -187,6 +240,7 @@ End TOPO_REORDER.
 
 Open Scope positive_scope.
 Require Import Lia.
+
 Section LIST_TOPO.
 
   Context {A: Type}.
@@ -216,6 +270,15 @@ Section LIST_TOPO.
 
   Definition NoDupNum (l: list (positive * A)) := NoDup (List.map fst l).
 
+  Lemma NoDupNum_cons_inv: forall nl na, NoDupNum (na :: nl) -> NoDupNum nl.
+  Proof.
+    induction nl; simpl; intros. apply NoDup_nil.
+    unfold NoDupNum in *. simpl in *. eapply NoDup_cons.
+    inv H; inv H3; auto.
+    eapply IHnl. eapply NoDup_cons. inv H; inv H3; eauto.
+    inv H; inv H3; eauto.
+  Qed.
+
   Lemma numblistgen_low_bound: forall l i j a,
     In (j, a) (numlistgen0 l i) -> i <= j.
   Proof.
@@ -242,7 +305,7 @@ Section LIST_TOPO.
       apply IHl.
   Qed.
 
-  Lemma numbered_list_nodup_number: forall l, NoDupNum (numlistgen l).
+  Lemma numlistgen_NoDupNum: forall l, NoDupNum (numlistgen l).
   Proof. intros. apply numbered_list_nodup_number0. Qed.
 
   Lemma nodup_number_nodup: forall l, NoDupNum l -> NoDup l.
@@ -259,22 +322,80 @@ Section LIST_TOPO.
   Qed.
 
   Lemma numbered_list_nodup: forall l, NoDup (numlistgen l).
-  Proof. intros. apply nodup_number_nodup, numbered_list_nodup_number. Qed.
+  Proof. intros. apply nodup_number_nodup, numlistgen_NoDupNum. Qed.
+
+  Lemma numlist_in_num_in: forall (nl: list (positive * A)) x, In x nl -> In (fst x) (map fst nl).
+  Proof.
+    induction nl. intros; simpl; auto.
+    intros. simpl. destruct H; subst; auto.
+  Qed.
+
+  Lemma numlist_incl_num_incl: forall nl nl': list (positive*A), 
+    incl nl nl' -> incl (map fst nl) (map fst nl').
+  Proof.
+    induction nl. intros; simpl. eapply incl_nil_l.
+    intros. eapply incl_cons_inv in H as []. simpl. eapply incl_cons.
+    eapply numlist_in_num_in; eauto. eapply IHnl; eauto.
+  Qed.
+
+
+  Lemma topo_reorder_NoDupNum_preserved:
+    forall R nl nl', topo_reorder R nl nl' -> NoDupNum nl' -> NoDupNum nl.
+  Proof.
+    assert(TMP: forall l x, In x l -> In (fst x) (map (fun p : positive * A => fst p) l)).
+    { induction l; intros; auto. destruct H. subst. left; auto.
+      right. eapply IHl; auto. }
+    intros. induction H.
+    - eapply NoDup_nil.
+    - unfold NoDupNum in *. simpl in *.
+      inv H0. eapply NoDup_cons; eauto.
+      intro; apply H4. 
+      eapply topo_reorder_incl in H1; eauto. eapply numlist_incl_num_incl in H1.
+      eapply H1; auto.
+    - unfold NoDupNum in *. simpl in *. inv H0; subst; auto.
+      inv H5; subst; auto. eapply NoDup_cons.
+      intro. destruct H0. apply H4; rewrite H0; left; auto. apply H3; auto.
+      eapply NoDup_cons; auto. intro. apply H4; right; auto.
+    - eapply IHtopo_reorder1, IHtopo_reorder2; auto.
+  Qed.
 
   Variable R: A -> A -> Prop.
   Variable l: list A.
-  
 
   (* Generated Relation from a list *)
-  Inductive GenR (na1 na2: positive * A): Prop :=
+  (* Inductive GenR (na1 na2: positive * A): Prop :=
    GenR_intro: List.In na1 (numlistgen l) -> List.In na2 (numlistgen l) -> 
     fst na1 < fst na2 -> R (snd na1) (snd na2)  -> GenR na1 na2
+  . *)
+
+  (* Generated Relation from a list,
+      aux. definition for simpler proofs *)
+  Inductive GenR' (i: positive) (na1 na2: positive * A): Prop :=
+    GenR_intro: List.In na1 (numlistgen0 l i) -> List.In na2 (numlistgen0 l i) -> 
+    fst na1 < fst na2 -> R (snd na1) (snd na2)  -> GenR' i na1 na2
   .
 
-  Check topo_reorder GenR.
+  (* Generated Relation from a list *)
+  Definition GenR := GenR' 1.
   
-  Definition treorder := topo_reorder GenR.
+  Definition treorder' := fun i => topo_reorder (GenR' i).
+  Definition tsorted' := fun i => topo_sorted (GenR' i).
 
+  Definition treorder := topo_reorder GenR.
+  Definition tsorted := topo_sorted GenR.
+
+  Lemma treorder_self': forall i j, treorder' i (numlistgen0 l j) (numlistgen0 l j).
+  Proof.
+    induction l; intros; simpl. apply topo_reorder_nil.
+    eapply topo_reorder_skip.
+    - eapply ngt'_ngt. intro; intros. destruct x.
+      eapply numblistgen_low_bound in H. intro. inv H0. simpl in H3. lia.
+    - eapply IHl0.
+  Qed. 
+
+
+  Lemma treorder_self: treorder (numlistgen l) (numlistgen l).
+  Proof. apply treorder_self'. Qed.
 
 End LIST_TOPO.
 
@@ -287,39 +408,60 @@ Section SWAPPING_PROPERTY.
   Let Rbnum (na1 na2: positive * A) := Rb (snd na1) (snd na2).
   Let R := fun x y => Rb x y = true.
 
+
   Theorem swapping_property_general:
-    forall l nl1 nl2, List.incl nl1 (numlistgen l) -> List.incl nl2 (numlistgen l) -> 
-      (treorder R l) nl1 nl2 -> NoDupNum nl1 ->
+    forall l nl1 nl2, List.incl nl1 (numlistgen l) ->
+      (* List.incl nl2 (numlistgen l) ->  *)
+      (treorder R l) nl1 nl2 -> 
+      NoDupNum nl1 ->
         exists ln, nl2 = try_swap_seq Rbnum ln nl1.
   Proof.
-    intros. induction H1.
+    intros. induction H0. 
     - exists []. simpl. auto.
-    - admit. (* fine  *)
+    - eapply List.incl_cons_inv in H as [].
+      unfold NoDupNum in H1. eapply NoDupNum_cons_inv in H1.
+      eapply IHtopo_reorder in H3 as [ln]; eauto.
+      exists (List.map Datatypes.S ln).
+      assert(TMP: forall lnx lx, try_swap_seq Rbnum (map Datatypes.S lnx) (x :: lx) 
+                = x :: try_swap_seq Rbnum lnx lx).
+      { induction lnx. simpl; intros; auto.
+        intros. simpl. destruct lx.
+        + rewrite try_swap_nil. erewrite try_swap_seq_singleton.
+          erewrite try_swap_seq_nil. auto.
+        + erewrite IHlnx; auto. }
+      rewrite TMP, H3; auto.
     - exists [O]. simpl.
-      assert(Rbnum y x = false). 2:{ rewrite H4; auto. }
+      assert(Rbnum y x = false). 2:{ rewrite H3; auto. }
       remember (Rbnum y x) as b. destruct b; auto.
-      exfalso. symmetry in Heqb. Locate Pos.le.
+      exfalso. symmetry in Heqb.
       destruct (Pos.lt_total (fst x) (fst y)).
-      { apply H1. apply GenR_intro; auto. 
-        eapply List.incl_cons_inv in H0 as[]; eauto.
-        eapply List.incl_cons_inv in H as[]; eauto. 
-        unfold R. auto. } destruct H4.
-      { inv H2. apply H7. rewrite H4; left; auto. }
-      { apply H3. apply GenR_intro; auto.
+      { apply H0. apply GenR_intro; auto. 
+        eapply List.incl_cons_inv in H as []; eauto.
+        eapply List.incl_cons_inv in H4 as []; eauto.
+        eapply List.incl_cons_inv in H as []; eauto.
+        unfold R. auto. } destruct H3.
+      { inv H1. apply H6. subst; left; auto. }
+      { apply H2. apply GenR_intro; auto.
         eapply List.incl_cons_inv in H as[]; eauto.
-        eapply List.incl_cons_inv in H0 as[]; eauto. }
-     - admit. (* fine? *)
-
-  Admitted.
+        eapply List.incl_cons_inv in H as[]; eauto.
+        eapply List.incl_cons_inv in H4 as[]; eauto. }
+     - assert(NoDupNum l'). eapply topo_reorder_symmetry in H0_.
+       eapply topo_reorder_NoDupNum_preserved in H0_; eauto.
+       assert(incl l' (numlistgen l)). eapply topo_reorder_symmetry in H0_.
+       pose proof (treorder_self R l); unfold treorder in H2.
+       eapply topo_reorder_incl in H0_; eauto. eapply incl_tran; eauto. 
+       edestruct IHtopo_reorder1 as [ln1]; eauto. edestruct IHtopo_reorder2 as [ln2]; eauto.
+       exists (ln1 ++ ln2).
+       subst. erewrite try_swap_app; auto.
+  Qed.
 
   Theorem swapping_property:
     forall l nl', (treorder R l) (numlistgen l) nl' -> 
       exists ln, nl' = try_swap_seq Rbnum ln (numlistgen l).
   Proof.
     intros. eapply swapping_property_general; eauto. apply List.incl_refl.
-    admit.
-    auto. eapply numbered_list_nodup_number.
-  Admitted.
+    eapply numlistgen_NoDupNum.
+  Qed.
 
 End SWAPPING_PROPERTY.
 
@@ -1819,6 +1961,7 @@ Proof.
     unfold transf_program_try_swap_in_one. unfold prog'. eauto.
 Qed.
 
+Definition numblock := list (positive * instruction).
 
 Section ABSTRACT_SCHEDULER.
 
@@ -1834,7 +1977,7 @@ Section ABSTRACT_SCHEDULER.
   Definition schedule (l: list instruction): list instruction :=
     numlistoff (schedule' (numlistgen l)).
 
-  Definition numblock := list (positive * instruction).
+
 
   Definition schedule_function (f: function):= 
     OK (mkfunction f.(fn_sig) f.(fn_stacksize) (schedule f.(fn_code))) .
@@ -2013,7 +2156,6 @@ Section ABSTRACT_LIST_SCHEDULER.
 
   (* Definition depends_on (i1 i2: instruction) := happens_before *)
 
-  Definition numblock := list (positive * instruction).
 
   (* Generate a numbered block from a basic block *)
   Fixpoint numblockgen0 (l: list instruction) (n: positive) :=
@@ -2060,7 +2202,7 @@ Section ABSTRACT_LIST_SCHEDULER.
 
 
 
-  Fixpoint indep_nodes'  (m : PTree.tree' (instruction * S.t)) (i: positive) 
+  Fixpoint indep_nodes'  (m : PTree.tree' (instruction * PS.t)) (i: positive) 
     (k: list (positive * instruction)) {struct m}: list (positive * instruction) :=
     match m with
     | PTree.Node001 r => indep_nodes' r (xI i) k
