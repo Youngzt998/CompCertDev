@@ -174,8 +174,8 @@ Section TOPO_REORDER.
     end.
 
   (* TODO: l need to be sorted already *)
-  Lemma topo_reorder_refl: forall l, topo_reorder l l.
-  Proof. induction l. apply topo_reorder_nil. Admitted.
+  (* Lemma topo_reorder_refl: forall l, topo_reorder l l.
+  Proof. induction l. apply topo_reorder_nil. Admitted. *)
 
   Lemma topo_reorder_is_permutation: forall l l', topo_reorder l l' -> Permutation l l'.
   Proof. intros. induction H. apply perm_nil. apply perm_skip; auto.
@@ -183,33 +183,10 @@ Section TOPO_REORDER.
 
 End TOPO_REORDER.
 
-Section TOPO_REORDER_SUBORDER.
 
-  Context {A: Type}.
-  Variable R1 R2: A -> A -> Prop.
-  Hypothesis suborder: forall x y, R1 x y -> R2 x y.
-
-  Lemma ngt_suborder_preserve:
-    forall x l, ngt R2 x l -> ngt R1 x l.
-  Proof.
-    intros. induction H.
-    - apply ngt_nil.
-    - apply ngt_l. 
-
-  Admitted.
-
-
-  Lemma topo_reorder_suborder_preserve:
-    forall l l', topo_reorder R1 l l' -> topo_reorder R2 l l'.
-  Proof.
-    intros. induction H.
-    - apply topo_reorder_nil.
-    - apply topo_reorder_skip. admit.
-  Abort.
-
-End TOPO_REORDER_SUBORDER.
 
 Open Scope positive_scope.
+Require Import Lia.
 Section LIST_TOPO.
 
   Context {A: Type}.
@@ -230,23 +207,40 @@ Section LIST_TOPO.
     | (n, x) :: l' => x :: numlistoff l'
     end.
 
+  Lemma numlist_gen_off0: forall l i, numlistoff (numlistgen0 l i) = l.
+  Proof. induction l; simpl; auto; intros. erewrite IHl; auto. Qed.
+  
   Lemma numlist_gen_off: forall l, numlistoff (numlistgen l) = l.
-  Proof. Admitted.
+  Proof. intros. apply numlist_gen_off0. Qed.
   
-  Lemma numlist_off_gen: forall nl, numlistgen (numlistoff nl) = nl.
-  Proof. Admitted. 
-  
-  Definition NoDupNum (l: list (positive * A)) := NoDup (List.map (fun p => fst p) l).
+
+  Definition NoDupNum (l: list (positive * A)) := NoDup (List.map fst l).
+
+  Lemma numblistgen_low_bound: forall l i j a,
+    In (j, a) (numlistgen0 l i) -> i <= j.
+  Proof.
+    induction l; intros. 
+    - simpl in H. exfalso; auto.
+    - simpl in H. destruct H.
+      + inv H. lia.
+      + specialize (IHl _ _ _ H). lia.
+  Qed.
 
   Lemma numbered_list_nodup_number0: forall l i, NoDupNum (numlistgen0 l i).
-  Proof. 
+  Proof.
+    assert(TMP: forall (nl: list (positive * A)) i, In i (List.map fst nl) -> exists a, In (i, a) nl).
+    { induction nl; simpl; intros.
+      - exfalso; auto.
+      - destruct a as [pos a]. simpl in H. destruct H.
+        subst. exists a; auto.
+        eapply IHnl in H as []. exists x; auto. }
     induction l.
     - intros. simpl. apply NoDup_nil.
-    - intros. simpl. apply NoDup_cons. fold List.map.
-      intro.
-      admit. (* fine *)
+    - intros. simpl. unfold NoDupNum. simpl. apply NoDup_cons.
+      intro. eapply TMP in H as [].
+      eapply numblistgen_low_bound in H. lia.
       apply IHl.
-  Admitted.
+  Qed.
 
   Lemma numbered_list_nodup_number: forall l, NoDupNum (numlistgen l).
   Proof. intros. apply numbered_list_nodup_number0. Qed.
@@ -336,27 +330,38 @@ Section TRY_SWAP_NUM.
   Variable (rel: A -> A -> bool).
 
   Let rel_num (na1 na2: positive * A) := rel (snd na1) (snd na2).
-  (* Let try_swap_num := try_swap rel_num.
-  Let try_swap_seq_num := try_swap_seq rel_num. *)
 
-  Lemma try_swap_num_equally: forall n l, 
-    numlistoff (try_swap rel_num n (numlistgen l)) = try_swap rel n l.
+  Lemma num_list_equal_content_equal_swap:
+    forall nl l n, l = numlistoff nl ->
+      numlistoff (try_swap rel_num n nl) = try_swap rel n l.
   Proof.
-  (* easy but trivial *)
-  Admitted.
+    induction nl.
+    - simpl; intros. subst. erewrite! try_swap_nil. auto.
+    - intros. destruct a. simpl in H.
+      destruct nl.
+      { simpl in H. subst. rewrite! try_swap_singleton. simpl; auto. }
+      { destruct n.
+        + destruct p0. simpl in H. subst. simpl.
+          unfold rel_num; simpl. destruct (rel a a0); simpl; auto.
+        + subst. destruct p0. simpl. erewrite IHnl; eauto. }
+  Qed.
 
+  Lemma num_list_equal_content_equal_swap_seq:
+    forall ln l nl, l = numlistoff nl ->
+      numlistoff (try_swap_seq rel_num ln nl) = try_swap_seq rel ln l.
+  Proof.
+    induction ln; intros.
+    - simpl; auto.
+    - simpl. erewrite IHln; eauto.
+      erewrite num_list_equal_content_equal_swap; eauto.
+  Qed.
 
   Lemma try_swap_seq_num_equally: forall ln l,
     numlistoff (try_swap_seq rel_num ln (numlistgen l)) = try_swap_seq rel ln l.
   Proof.
-    induction ln; intros.
-    - simpl. erewrite numlist_gen_off. auto. (* easy *) 
-    - simpl. erewrite <- IHln. erewrite <- try_swap_num_equally.
-      erewrite numlist_off_gen. auto.
-  Qed. 
-
-  (* Lemma swapping_property_num:
-     *)
+    intros; apply num_list_equal_content_equal_swap_seq.
+    erewrite numlist_gen_off; eauto.
+  Qed.
 
 End TRY_SWAP_NUM.
 
@@ -1818,10 +1823,6 @@ Qed.
 Section ABSTRACT_SCHEDULER.
 
   Variable schedule': list (positive * instruction) -> list (positive * instruction).
-    (* list (positive * instruction) -> (* already scheduled instruction*)
-      list (positive * instruction) ->  (* valid to schedule as next instruction *)
-        list (positive * instruction) ->  (* full original codes in the function *)
-          option positive.  which one in valid-instrucion-list (2nd augument) to pick next *)
 
   Let HBR := fun i1 i2 => happens_before i1 i2 = true.
   Let HBnum (na1 na2: positive * instruction) := happens_before (snd na1) (snd na2).
@@ -1860,31 +1861,6 @@ Section ABSTRACT_SCHEDULER.
     intros. unfold schedule. edestruct swapping_lemma_numblock as [ln].
     exists ln. erewrite H. eapply try_swap_seq_num_equally.
   Qed.
-
-  (* Definition schedule_global_defs (defs: list (ident * globdef fundef unit)) := 
-      transf_globdefs  . *)
-
-  (* schedule one function *)
-  Definition schedule_program_in_one (funid: ident) (p: program): res program :=
-  transform_partial_program2 
-  (fun i f => if ident_eq i funid then schedule_fundef f else OK f) 
-  (fun i v => OK v) p.
-
-  Fixpoint schedule_program_seq (seq: list ident) (prog: program):=
-  match seq with
-  | [] => OK prog
-  | id :: seq' => do prog' <- schedule_program_in_one id prog;
-                  schedule_program_seq seq' prog'
-  end.
-
-  Fixpoint funid_list (defs: list (ident * globdef fundef unit)): list ident :=
-    match defs with
-    | nil => nil
-    | (id, Gfun f) :: defs' => id :: funid_list defs'
-    | (id, Gvar v) :: defs' => funid_list defs'
-    end.
-
-  Definition program_funid_list (p: program) := funid_list p.(prog_defs).
 
   Lemma schedule_program_swapping_lemma_prepare1:
     forall seq def prog_defs,
@@ -2002,6 +1978,7 @@ Section ABSTRACT_SCHEDULER.
 
 End ABSTRACT_SCHEDULER.
 
+Check schedule_program_forward_simulation.
 
 
 (* Case Study: List Scheduling *)
@@ -2019,6 +1996,12 @@ Section ABSTRACT_LIST_SCHEDULER.
   (* Some outside priority funcion. The prioirty oracle can be custumized.
         It should return the location of the first pick *)
   Variable firstpick: list (positive * instruction) -> list (positive * instruction) -> positive.
+    (* list (positive * instruction) -> (* already scheduled instruction*)
+      list (positive * instruction) ->  (* valid to schedule as next instruction *)
+        list (positive * instruction) ->  (* full original codes in the function *)
+          option positive.  which one in valid-instrucion-list (2nd augument) to pick next *)
+
+
 
   (* the priority function has to guarantee the first pick in in the list *)
   (* Hypothesis priority_sound: forall l, List.In (firstpick l) l. *)
