@@ -37,37 +37,11 @@ Section LIST_INDUCTION.
 End LIST_INDUCTION.
 
 
-(* Section LIST_DOUBLE_INDUCTION.
-
-  Variable A : Type.
-  Variable P : list A -> Prop.
-  Variable R : list A -> list A -> Prop.
-
-  Hypothesis H : forall la lb, length la = length lb ->
-    (forall la' lb', length la' = length lb' -> 
-        length la' < length la -> P la' -> P lb' -> R la' lb') -> R la lb.
-
-  Theorem list_length_double_ind : forall la lb, length la = length lb -> P la -> P lb -> R la lb.
-  Proof.
-    intros. induction la.
-
-    assert (forall (la lb la' lb': list A), length la' = length lb' -> 
-              length la' <= length la -> R la' lb').
-    { induction la.
-      - intros lb la' lb' Heq Hle. inv Hle. apply H. auto. intros. apply H; auto.
-      - apply IHxs. simpl in Hlen. omega.
-    }
-    intros xs.
-    apply H_ind with (xs := xs).
-    omega.
-  Qed.
-
-End LIST_DOUBLE_INDUCTION. *)
-
 (** TODO: move to TopoSort files *)
+Open Scope nat_scope.
 Require Import Relations.Relation_Definitions.
 Section TRY_SWAP.
-  Open Scope nat_scope.
+
   Context {A: Type}.
   Variable (rel: A -> A -> bool).
 
@@ -127,13 +101,32 @@ Section TRY_SWAP.
 End TRY_SWAP.
 
 
+
+
 Require Import Sorting.Permutation.
 Section TOPO_REORDER.
 
   Context {A: Type}.
   Variable R: A -> A -> Prop.
 
-  Hypothesis Rtrans: forall x y z, R x y -> R y z -> R x z.
+  Inductive sublist: list A -> list A -> Prop :=
+  | sublist_refl: forall l, sublist l l
+  | sublist_rm: forall l l1 a l2, sublist (l1 ++ [a] ++ l2) l -> sublist (l1 ++ l2) l   
+  .
+
+  Lemma sublist_nil_all: forall l, sublist [] l.
+  Proof. induction l; intros. apply sublist_refl. 
+  Admitted.
+
+  Lemma sublist_same_length:
+    forall l' l, sublist l' l -> length l = length l' -> l = l'.
+  Proof.
+    induction l'. intros.
+    - admit.
+    - intros. destruct l.
+      + admit.
+      + 
+  Admitted.
 
   (* not greater than any elements in list *)
   Inductive ngt (a: A): list A -> Prop :=
@@ -234,6 +227,12 @@ Section TOPO_REORDER.
       eapply topo_sorted_cons; eauto. eapply ngt_cons_inv; eauto.
   Qed.
 
+  Lemma sorted_same_elements_topo_reorder: forall l l', 
+      NoDup l -> incl l l' -> incl l' l -> topo_sorted l -> topo_sorted l' -> topo_reorder l l'.
+  Proof. 
+
+  Admitted.
+
 End TOPO_REORDER.
 
 
@@ -245,15 +244,15 @@ Section LIST_TOPO.
 
   Context {A: Type}.
 
-  Fixpoint numlistgen0 (l: list A) (n: positive): list (positive * A) :=
+  Fixpoint numlistgen' (l: list A) (n: positive): list (positive * A) :=
     match l with
     | [] => []
-    | x :: l' => (n, x) :: numlistgen0 l' (n + 1)
+    | x :: l' => (n, x) :: numlistgen' l' (n + 1)
     end.
   
-  Check numlistgen0.
+  Check numlistgen'.
 
-  Definition numlistgen (l: list A) := numlistgen0 l 1.
+  Definition numlistgen (l: list A) := numlistgen' l 1.
 
   Fixpoint numlistoff (l: list (positive * A)): list A :=
     match l with
@@ -261,7 +260,7 @@ Section LIST_TOPO.
     | (n, x) :: l' => x :: numlistoff l'
     end.
 
-  Lemma numlist_gen_off0: forall l i, numlistoff (numlistgen0 l i) = l.
+  Lemma numlist_gen_off0: forall l i, numlistoff (numlistgen' l i) = l.
   Proof. induction l; simpl; auto; intros. erewrite IHl; auto. Qed.
   
   Lemma numlist_gen_off: forall l, numlistoff (numlistgen l) = l.
@@ -280,7 +279,7 @@ Section LIST_TOPO.
   Qed.
 
   Lemma numblistgen_low_bound: forall l i j a,
-    In (j, a) (numlistgen0 l i) -> i <= j.
+    In (j, a) (numlistgen' l i) -> i <= j.
   Proof.
     induction l; intros. 
     - simpl in H. exfalso; auto.
@@ -289,7 +288,7 @@ Section LIST_TOPO.
       + specialize (IHl _ _ _ H). lia.
   Qed.
 
-  Lemma numbered_list_nodup_number0: forall l i, NoDupNum (numlistgen0 l i).
+  Lemma numbered_list_nodup_number0: forall l i, NoDupNum (numlistgen' l i).
   Proof.
     assert(TMP: forall (nl: list (positive * A)) i, In i (List.map fst nl) -> exists a, In (i, a) nl).
     { induction nl; simpl; intros.
@@ -371,7 +370,7 @@ Section LIST_TOPO.
   (* Generated Relation from a list,
       aux. definition for simpler proofs *)
   Inductive GenR' (i: positive) (na1 na2: positive * A): Prop :=
-    GenR_intro: List.In na1 (numlistgen0 l i) -> List.In na2 (numlistgen0 l i) -> 
+    GenR_intro: List.In na1 (numlistgen' l i) -> List.In na2 (numlistgen' l i) -> 
     fst na1 < fst na2 -> R (snd na1) (snd na2)  -> GenR' i na1 na2
   .
 
@@ -384,7 +383,7 @@ Section LIST_TOPO.
   Definition treorder := topo_reorder GenR.
   Definition tsorted := topo_sorted GenR.
 
-  Lemma treorder_self': forall i j, treorder' i (numlistgen0 l j) (numlistgen0 l j).
+  Lemma treorder_self': forall i j, treorder' i (numlistgen' l j) (numlistgen' l j).
   Proof.
     induction l; intros; simpl. apply topo_reorder_nil.
     eapply topo_reorder_skip.
@@ -392,7 +391,6 @@ Section LIST_TOPO.
       eapply numblistgen_low_bound in H. intro. inv H0. simpl in H3. lia.
     - eapply IHl0.
   Qed. 
-
 
   Lemma treorder_self: treorder (numlistgen l) (numlistgen l).
   Proof. apply treorder_self'. Qed.
@@ -569,7 +567,6 @@ Section SIMULATION_SEQUENCE.
 End SIMULATION_SEQUENCE.
 
 
-
 (* TODO Warning: simple but machine dependent;
       Try to make codes the same *)
 Section MACHINE_DEPENDENT_X86.
@@ -644,12 +641,12 @@ Proof. boolean_equality. Defined.
 Lemma mreg_ident_eq: forall (s1 s2: mreg + ident), {s1 = s2} + {s1 <> s2}.
 Proof. generalize mreg_eq ident_eq. decide equality. Defined.
 
-Definition insttruction_eqb: instruction -> instruction -> bool.
+(* Definition instruction_eqb: instruction -> instruction -> bool.
 Proof. 
   generalize mreg_eq typ_eq slot_eq Z.eq_dec eq_addressing eq_operation chunk_eq signature_eq
     mreg_ident_eq external_function_eq eq_condition peq.
   boolean_equality. admit. admit.
-Admitted.
+Admitted. *)
 
 
 Lemma mreg_eqb_refl: forall x, mreg_eqb x x = true.
@@ -770,7 +767,9 @@ Definition hb_destroy (i1 i2: instruction) :=
   || hb_destroy_dst i1 i2
   || hb_destroy_dst i2 i1.
 
-(* i1 i2 have dependence, order irrelevent *)
+(* Dependence relation:
+    i1 i2 should always happens before i2 if it happens before in original code
+      note this relation is order irrelevent thus symmetric *)
 Definition happens_before (i1 i2: instruction): bool :=
     (* solid dependence from control inst. like function calls, return, etc. *)
     solid_inst i1
@@ -1961,7 +1960,6 @@ Proof.
     unfold transf_program_try_swap_in_one. unfold prog'. eauto.
 Qed.
 
-Definition numblock := list (positive * instruction).
 
 Section ABSTRACT_SCHEDULER.
 
@@ -1976,8 +1974,6 @@ Section ABSTRACT_SCHEDULER.
   
   Definition schedule (l: list instruction): list instruction :=
     numlistoff (schedule' (numlistgen l)).
-
-
 
   Definition schedule_function (f: function):= 
     OK (mkfunction f.(fn_sig) f.(fn_stacksize) (schedule f.(fn_code))) .
@@ -2134,40 +2130,43 @@ Print PS.elt.
 
 Goal PositiveSet.t = PS.t. unfold PS.t, PositiveSet.t. auto. Qed.
 
+Definition numblock := list (positive * instruction).
+
 Section ABSTRACT_LIST_SCHEDULER.
 
   (* Some outside priority funcion. The prioirty oracle can be custumized.
         It should return the location of the first pick *)
-  Variable firstpick: list (positive * instruction) -> list (positive * instruction) -> positive.
-    (* list (positive * instruction) -> (* already scheduled instruction*)
+  Variable firstpick':
+    list (positive * instruction) -> (* already scheduled instruction*)
       list (positive * instruction) ->  (* valid to schedule as next instruction *)
         list (positive * instruction) ->  (* full original codes in the function *)
-          option positive.  which one in valid-instrucion-list (2nd augument) to pick next *)
+          option positive.   (* which one in valid-instrucion-list (2nd augument) to pick next *)
 
+  Definition firstpick:
+    list (positive * instruction) -> (* already scheduled instruction*)
+      list (positive * instruction) ->  (* valid to schedule as next instruction *)
+        list (positive * instruction) ->  (* full original codes in the function *)
+          positive * instruction.   (* which one in valid-instrucion-list (2nd augument) to pick next *)
+  Admitted.
 
+  (* Definition firstpick (l1 l2 l3: numbblock) :=  *)
 
-  (* the priority function has to guarantee the first pick in in the list *)
-  (* Hypothesis priority_sound: forall l, List.In (firstpick l) l. *)
+  Let HBR := fun i1 i2 => happens_before i1 i2 = true.
+  Let HBnum (na1 na2: positive * instruction) := happens_before (snd na1) (snd na2).
+  Let HBGenR (l: list instruction) := GenR HBR l.
+
 
   (* Data structure to store dependence relation *)
   Definition DPMap_t := PMap.t (option (instruction * PS.t)).
+
   (* Definition DPMap_init := PMap.init (option (instruction * S.t)). *)
   (* Definition DPMap_set := PMap.set (option (instruction * S.t)). *)
 
   (* Definition depends_on (i1 i2: instruction) := happens_before *)
 
 
-  (* Generate a numbered block from a basic block *)
-  Fixpoint numblockgen0 (l: list instruction) (n: positive) :=
-    match l with
-    | [] => []
-    | x :: l' => (n, x) :: numblockgen0 l' (n + 1)
-    end.
-
-  (* block number started from 1 *)
-  Definition numblockgen (l: list instruction) := numblockgen0 l 1.
-
-  (* input l should be !!reversed!! list of original list, for efficient computing and proving *)
+  (* input l should be !!reversed!! list of original list,
+      aka computing from end to head of a block,                                                                                                                                                                                        for efficient definition/computing *)
   Fixpoint dep_pset (i: instruction) (l_rev: numblock): PS.t :=
     match l_rev with
     | nil => PS.empty
@@ -2184,48 +2183,131 @@ Section ABSTRACT_LIST_SCHEDULER.
 
   (* Compute the map that stores the dependence relation inside a basic block *)
   Definition dep_map_gen (l: list instruction) :=
-    dep_map (List.rev (numblockgen l)).
+    dep_map (List.rev (numlistgen l)).
 
-  Definition dep_relb_gen (l: list instruction) (pi1 pi2: positive * instruction): bool :=
-    let M := dep_map (List.rev (numblockgen l)) in
+  Definition dep_GenRb (l: list instruction) (pi1 pi2: positive * instruction): bool :=
+    let M := dep_map (List.rev (numlistgen l)) in
     match PMap.get (fst pi1) M with
     | None => false
-    | Some (i, ps) => insttruction_eqb (snd pi1) i && PS.mem (fst pi2) ps
+    | Some (i, ps) => PS.mem (fst pi2) ps
     end.
 
-  Definition dep_rel_gen' (l: list instruction) (pi1 pi2: positive * instruction): Prop :=
-    dep_relb_gen l pi1 pi2 = true.
 
+  Definition dep_map_gen' (i: positive) (l: list instruction) :=
+    dep_map (List.rev (numlistgen' l i)).
+
+  Definition dep_GenRb' (i: positive) (l: list instruction) (pi1 pi2: positive * instruction): bool :=
+    let M := dep_map (List.rev (numlistgen' l i)) in
+    match PMap.get (fst pi1) M with
+    | None => false
+    | Some (i, ps) => PS.mem (fst pi2) ps
+    end.
+
+  Lemma dep_GenRb'_correct:
+    forall l i pi1 pi2, dep_GenRb' i l pi1 pi2 = true -> GenR' HBR l i pi1 pi2.
+  Proof.
+    intros. unfold dep_GenRb' in H. destruct pi1 as [p1 i1]; simpl in H.
+    remember ((dep_map (rev (numlistgen' l i))) !! p1) as b.
+    destruct b; symmetry in Heqb.
+    - destruct p as [i1' ps]. destruct pi2 as [p2 i2]; simpl in H.
+    (* should be fine? *) 
+  Admitted.
+
+  Lemma dep_GenRb_correct:
+    forall l pi1 pi2, dep_GenRb l pi1 pi2 = true -> GenR HBR l pi1 pi2.
+  Proof. unfold dep_GenRb. intros. eapply dep_GenRb'_correct; eauto. Qed.
+
+  Print List.rev.
 
   (* Generated relation from a basic block *)  
 
-
-
-
-  Fixpoint indep_nodes'  (m : PTree.tree' (instruction * PS.t)) (i: positive) 
+  (* Nodes that are independent, a.k.a ready to be scheduled in current dependence graph
+        a node is empty indicates that it is independent
+          and no other instrucion have to happens before it *)
+  Fixpoint indep_nodes'  (m : PTree.tree' (option (instruction * PS.t))) (i: positive) 
     (k: list (positive * instruction)) {struct m}: list (positive * instruction) :=
     match m with
     | PTree.Node001 r => indep_nodes' r (xI i) k
-    | PTree.Node010 x => if PositiveSet.is_empty (snd x) then (PTree.prev i, fst x) :: k
-                        else k
-    | PTree.Node011 x r => if PositiveSet.is_empty (snd x) 
-                          then (PTree.prev i, fst x) :: indep_nodes' r (xI i) k
-                          else indep_nodes' r (xI i) k
+    | PTree.Node010 x => 
+        match x with 
+        | Some xp => if PositiveSet.is_empty (snd xp) 
+                     then (PTree.prev i, fst xp) :: k
+                     else k
+        | None => k
+        end
+    | PTree.Node011 x r =>
+        match x with 
+        | Some xp => if PositiveSet.is_empty (snd xp) 
+                     then (PTree.prev i, fst xp) :: indep_nodes' r (xI i) k
+                     else indep_nodes' r (xI i) k
+        | None => indep_nodes' r (xI i) k
+        end
     | PTree.Node100 l => indep_nodes' l (xO i) k
     | PTree.Node101 l r => indep_nodes' l (xO i) (indep_nodes' r (xI i) k)
-    | PTree.Node110 l x => if PositiveSet.is_empty (snd x) 
-                          then indep_nodes' l (xO i) ((PTree.prev i, fst x) ::k)
-                          else indep_nodes' l (xO i) k
-    | PTree.Node111 l x r => if PositiveSet.is_empty (snd x)
-                            then ((PTree.prev i, fst x) :: (indep_nodes' r (xI i) k))
-                            else (indep_nodes' r (xI i) k)
+    | PTree.Node110 l x =>
+        match x with 
+        | Some xp =>  if PositiveSet.is_empty (snd xp) 
+                      then indep_nodes' l (xO i) ((PTree.prev i, fst xp) ::k)
+                      else indep_nodes' l (xO i) k
+        | None => indep_nodes' l (xO i) k
+        end
+    | PTree.Node111 l x r => 
+        match x with 
+        | Some xp =>  if PositiveSet.is_empty (snd xp)
+                      then ((PTree.prev i, fst xp) :: (indep_nodes' r (xI i) k))
+                      else (indep_nodes' r (xI i) k)
+        | None => indep_nodes' l (xO i) k
+        end
     end.
 
-  Definition indep_nodes (m : DPMap_t): list (positive*instruction) := 
+  Definition indep_nodes (m : DPMap_t): list (positive * instruction) := 
     match snd m with 
     | PTree.Empty => nil 
     | PTree.Nodes m' => indep_nodes' m' xH nil 
     end.
+
+  Print option_map.
+
+  Definition remove_node0 (p: positive) (node: option (instruction * PS.t)) :=
+    match node with
+    | Some (i, ps) => Some (i, PS.remove p ps) 
+    | None => None
+    end.
+
+  Definition remove_node (p: positive) (m: DPMap_t): DPMap_t :=
+    (fst m, PTree.map1 (remove_node0 p) (PTree.remove p (snd m))).
+
+  (* return the one to schedule and the new dependence relation after removing it *)
+  Definition schedule_one (original: list (positive * instruction))
+        (scheduled: list (positive * instruction))
+        (remain: DPMap_t): ((positive * instruction) * DPMap_t) := 
+    let available := indep_nodes remain in
+    let (p, i) := firstpick original scheduled available in
+    ((p, i), remove_node p remain).
+
+
+  Definition schedule_invariant 
+    (scheduled_rev: list (positive * instruction))
+    (remain: DPMap_t): Prop . Admitted.
+
+  Print NoDup.
+
+
+  Fixpoint schedule_n (original: list (positive * instruction))
+    (L: nat) (scheduled: list (positive * instruction)) 
+      (m: DPMap_t): list (positive * instruction) :=
+    let (pi, m') := schedule_one original scheduled m in
+    match L with
+    | O => nil
+    | Datatypes.S L' => pi :: schedule_n original L' (scheduled ++ [pi]) m'  (* TODO *)
+    end.
+
+  Definition schedule_block (l: list instruction): list instruction :=
+    numlistoff (schedule_n (numlistgen l) (List.length l) [] (dep_map_gen l) ).
+
+  
+
+
 
   Print PTree.map.
   Check DPMap.
@@ -2233,101 +2315,6 @@ Section ABSTRACT_LIST_SCHEDULER.
   intros. Check (snd m). Abort.
   Check PTree.Node001.
   Print PTree.prev.
-
-  Fixpoint schedule' (m: DPMap) (n: nat) (done: list positive): list positive:=
-    match n with
-    | Datatypes.O => nil
-    | Datatypes.S n' => nil
-    end.
-
-
-  
-
-  (* Fixpoint mapblock (l: list instruction) (n: nat): option instruction :=
-    match l, n with
-    | i :: l', Datatypes.O => Some i
-    | i :: l', Datatypes.S n' => map_block l' n'
-    | nil, _ => None
-    end. *)
-
-
-
-
-  Fixpoint numblock_at (pos: positive) (pl: numblock_t): option instruction :=
-    match pl with
-    | nil => None
-    | (pos', i) :: pl' => if Pos.eqb pos pos' then Some i else numblock_at pos pl'
-    end.
-
-  Lemma numbblock_nodup: forall l i, NoDup (numblock0 l i).
-  Proof.
-    induction l; intros. simpl. apply NoDup_nil.
-    simpl. apply NoDup_cons; auto. (* should be fine *)
-  Admitted.
-
-
-  
-
-  Fixpoint hbset (i: instruction) (pl: list (positive*instruction)): PositiveSet.t :=
-    match pl with 
-    | nil => PositiveSet.empty
-    | (pos, i') :: pl' => 
-        if happens_before i i' then PositiveSet.add pos (hbset i pl')  
-        else hbset i pl'
-    end.
-
-
-  Fixpoint hbmap (pl: list (positive*instruction)): HBMap :=
-    match pl with
-    | _ => PMap.init
-    end.
-
-  Fixpoint block2map (l: list instruction): HBMap :=
-
-
-
-  Fixpoint hblist (i: instruction) (nl: list (nat *instruction)): list nat :=
-    match nl with 
-    | nil => nil
-    | (n', i') :: nl' => if happens_before i i' then n' :: hblist i nl'
-                         else hblist i nl'
-    end.
-
-  Fixpoint map_hblist (l: list instruction) (n: nat): option (list nat):=
-    match l, n with
-    | i :: l', Datatypes.O => Some i
-    | i :: l', Datatypes.S n' => map_block l' n'
-    | nil, _ => None
-    end.
-
-
-  Context {A: Type}.
-  Variable l: list A.
-
-  (* Fixpoint depend_list (a: A) (l: list (nat * A)) :=
-    match l with
-    | [] => []
-    | (i, a') :: l' => if rel a a' then a' :: depend_list a l'
-                      else depend_list a l'
-    end.
-
-  Fixpoint depend_map (l: list (nat * A)) :=
-    match l with
-    | [] => PTree.empty (list A)
-    | (i, a) :: l' => PTree.set (Pos.of_nat i) (depend_list a l') (depend_map l')
-    end.
-
-  Fixpoint list2map {X: Type} (l: list X) (n: nat):=
-    match l with
-    | [] => PMap
-    | x :: l' => PMap.set (Pos.of_nat n) x (list2map l' (S n))
-    end.
-
-  Inductive list_topo_order: (nat * A) -> (nat * A) -> Prop :=
-
-  . *)
-  
-
 
 
 End INST_SCHED.
