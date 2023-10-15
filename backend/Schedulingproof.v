@@ -227,11 +227,44 @@ Section TOPO_REORDER.
       eapply topo_sorted_cons; eauto. eapply ngt_cons_inv; eauto.
   Qed.
 
-  Lemma sorted_same_elements_topo_reorder: forall l l', 
-      NoDup l -> incl l l' -> incl l' l -> topo_sorted l -> topo_sorted l' -> topo_reorder l l'.
-  Proof. 
+  (* exactly same elements *)
+  Inductive NoDupSame: list A -> list A -> Prop :=
+    | NoDupSame_intro:
+      forall l1 l2, NoDup l1 -> NoDup l2 -> incl l1 l2 -> incl l2 l2 ->
+        NoDupSame l1 l2
+  .
+
+  Lemma sorted_same_elements_topo_reorder'_ind:
+    forall n,
+    (forall k l1 l2, k < n -> length l1 = k -> NoDupSame l1 l2 ->  
+              topo_sorted l1 -> topo_sorted l2 -> topo_reorder l1 l2) ->
+    (forall l1 l2, length l1 = n -> NoDupSame l1 l2 ->  
+              topo_sorted l1 -> topo_sorted l2 -> topo_reorder l1 l2) .
+  Proof.
+    intros.
 
   Admitted.
+
+  Lemma sorted_same_elements_topo_reorder':
+    forall n l1 l2, length l1 = n -> NoDupSame l1 l2 ->  
+      topo_sorted l1 -> topo_sorted l2 -> topo_reorder l1 l2.
+  Proof.
+    intros n. eapply sorted_same_elements_topo_reorder'_ind; eauto.
+    induction n.
+    - intros. inv H.
+    - intros. assert(k < n \/ k = n). inv H; auto.
+      destruct H4.
+      eapply IHn; eauto. subst.
+      eapply sorted_same_elements_topo_reorder'_ind; eauto.
+  Qed.
+
+
+  Theorem sorted_same_elements_topo_reorder: 
+    forall l1 l2,  NoDupSame l1 l2 -> 
+      topo_sorted l1 -> topo_sorted l2 -> topo_reorder l1 l2.
+  Proof.
+    intros. eapply sorted_same_elements_topo_reorder'; eauto.
+  Qed.
 
 End TOPO_REORDER.
 
@@ -1963,20 +1996,23 @@ Qed.
 
 Section ABSTRACT_SCHEDULER.
 
-  Variable schedule': list (positive * instruction) -> list (positive * instruction).
+  Variable schedule': list (positive * instruction) -> res (list (positive * instruction)).
 
   Let HBR := fun i1 i2 => happens_before i1 i2 = true.
   Let HBnum (na1 na2: positive * instruction) := happens_before (snd na1) (snd na2).
   Let HBGenR (l: list instruction) := GenR HBR l.
 
   Hypothesis schedule_valid:
-    forall l, treorder HBR l (numlistgen l) (schedule' (numlistgen l)).
+    forall l nl', schedule' (numlistgen l) = OK nl' -> 
+      treorder HBR l (numlistgen l) nl'.
   
-  Definition schedule (l: list instruction): list instruction :=
-    numlistoff (schedule' (numlistgen l)).
+  Definition schedule (l: list instruction): res (list instruction) :=
+    do nl' <- schedule' (numlistgen l);
+    OK (numlistoff nl').
 
-  Definition schedule_function (f: function):= 
-    OK (mkfunction f.(fn_sig) f.(fn_stacksize) (schedule f.(fn_code))) .
+  Definition schedule_function (f: function):=
+    do code' <- schedule (f.(fn_code));
+    OK (mkfunction f.(fn_sig) f.(fn_stacksize) code') .
 
   Definition schedule_fundef (f: fundef): res fundef :=
     AST.transf_partial_fundef schedule_function f.
@@ -1986,7 +2022,8 @@ Section ABSTRACT_SCHEDULER.
     (fun i f => schedule_fundef f) (fun i v => OK v) p.
 
   Lemma swapping_lemma_numblock:
-    forall l, exists ln, schedule' (numlistgen l) = try_swap_seq HBnum ln (numlistgen l).
+    forall l nl', schedule' (numlistgen l) = OK nl' ->
+      exists ln, nl' = try_swap_seq HBnum ln (numlistgen l).
   Proof.
     intros l. pose proof schedule_valid l.
     unfold treorder in H.
@@ -2182,8 +2219,8 @@ Section ABSTRACT_LIST_SCHEDULER.
     end.
 
   (* Compute the map that stores the dependence relation inside a basic block *)
-  Definition dep_map_gen (l: list instruction) :=
-    dep_map (List.rev (numlistgen l)).
+  Definition dep_map_gen (nl: list (positive * instruction)) :=
+    dep_map (List.rev nl).
 
   Definition dep_GenRb (l: list instruction) (pi1 pi2: positive * instruction): bool :=
     let M := dep_map (List.rev (numlistgen l)) in
@@ -2278,34 +2315,100 @@ Section ABSTRACT_LIST_SCHEDULER.
     (fst m, PTree.map1 (remove_node0 p) (PTree.remove p (snd m))).
 
   (* return the one to schedule and the new dependence relation after removing it *)
-  Definition schedule_one (original: list (positive * instruction))
+  Definition schedule_1 (original: list (positive * instruction))
         (scheduled: list (positive * instruction))
-        (remain: DPMap_t): ((positive * instruction) * DPMap_t) := 
+        (remain: DPMap_t): res (list (positive * instruction) * DPMap_t) := 
     let available := indep_nodes remain in
-    let (p, i) := firstpick original scheduled available in
-    ((p, i), remove_node p remain).
+    let pi := firstpick original scheduled available in
+    OK (scheduled ++ [pi], remove_node (fst pi) remain).
+
+  Check ngt.
+
+  Inductive schedule_invariant
+    (original: list instruction) (originaln := numlistgen original)
+    (scheduled: list (positive * instruction))  (remain: DPMap_t): Prop := 
+  | sched_inv 
+    (inclorigial: forall p i, List.In (p, i) scheduled -> List.In (p, i) originaln )
+    (inclremain: forall p i ps, PMap.get p remain = Some (i, ps) -> List.In (p, i) originaln)
+    (inclremain: forall p i, List.In (p, i) originaln -> 
+      (exists ps, PMap.get p remain = Some (i, ps)) \/ List.In (p, i) scheduled)
+    (exclusive1: forall p i, List.In (p, i) scheduled -> PMap.get p remain = None)
+    (exclusive2: forall p i ps, PMap.get p remain = Some (i, ps) -> ~ List.In (p, i) scheduled)
+    (sublist: exists nl, sublist nl originaln /\ treorder HBR original nl scheduled):
+      schedule_invariant original scheduled remain 
+  .
 
 
-  Definition schedule_invariant 
-    (scheduled_rev: list (positive * instruction))
-    (remain: DPMap_t): Prop . Admitted.
+  Lemma schedule_1_invariant_preserve:
+    forall original scheduled remain scheduled' remain',
+      let originaln := numlistgen original in
+      schedule_invariant original scheduled remain ->
+      schedule_1 originaln scheduled remain = OK (scheduled', remain') ->
+        schedule_invariant original scheduled' remain'.
+  Proof.
+    intros. unfold schedule_1 in H0. 
+    set(pi := firstpick originaln scheduled (indep_nodes remain)). fold pi in H0. inv H0.
+    eapply sched_inv.
+    - admit.
+    - admit.
+    - admit.
+    - admit.
+    - admit.
+    - admit.
+  Admitted.
 
   Print NoDup.
 
 
-  Fixpoint schedule_n (original: list (positive * instruction))
-    (L: nat) (scheduled: list (positive * instruction)) 
-      (m: DPMap_t): list (positive * instruction) :=
-    let (pi, m') := schedule_one original scheduled m in
-    match L with
-    | O => nil
-    | Datatypes.S L' => pi :: schedule_n original L' (scheduled ++ [pi]) m'  (* TODO *)
+  Fixpoint schedule_n (L: nat) (original: list (positive * instruction))
+      (scheduled: list (positive * instruction)) 
+      (remain: DPMap_t): res (list (positive * instruction) * DPMap_t) :=
+    match schedule_1 original scheduled remain with
+    | OK (scheduled', remain') =>
+      match L with
+      | O => OK (scheduled, remain)
+      | Datatypes.S L' => schedule_n L' original scheduled' remain'  (* TODO *)
+      end
+    | Error msg => Error msg
     end.
 
-  Definition schedule_block (l: list instruction): list instruction :=
-    numlistoff (schedule_n (numlistgen l) (List.length l) [] (dep_map_gen l) ).
+
+  Definition schedule_numblock (nl: list (positive * instruction)) :=
+    schedule_n (List.length nl) nl [] (dep_map_gen nl).
+
+  Definition list_schedule := schedule_program schedule_numblock.
+
+  Print sublist.
+
+  Lemma schedule_numblock_correct':
+    forall l, exists nl', sublist nl' (numlistgen l) /\
+      treorder HBR l nl' (schedule_numblock (numlistgen l)).
+  Proof.
+    intros. unfold schedule_numblock. set (n:= length (numlistgen l)).
+    induction n.
+    - admit.
+    - 
+  Admitted.
+
+  Lemma schedule_numblock_correct:
+    forall l, treorder HBR l (numlistgen l) (schedule_numblock (numlistgen l)).
+  Proof.
+
+  Admitted.
+
+  Theorem list_schedule_forward_simulation:
+    forall prog tprog, list_schedule prog = OK tprog -> 
+      forward_simulation (Linear.semantics prog) (Linear.semantics tprog).
+  Proof.
+    intros. eapply schedule_program_forward_simulation; eauto.
+    eapply schedule_numblock_correct.
+  Qed.
 
   
+
+
+  Lemma schedule_block_topo_reorder:
+
 
 
 
