@@ -109,7 +109,7 @@ Section TOPO_REORDER.
   Context {A: Type}.
   Variable R: A -> A -> Prop.
 
-  Inductive sublist: list A -> list A -> Prop :=
+  (* Inductive sublist: list A -> list A -> Prop :=
   | sublist_refl: forall l, sublist l l
   | sublist_rm: forall l l1 a l2, sublist (l1 ++ [a] ++ l2) l -> sublist (l1 ++ l2) l   
   .
@@ -126,7 +126,7 @@ Section TOPO_REORDER.
     - intros. destruct l.
       + admit.
       + 
-  Admitted.
+  Admitted. *)
 
   (* not greater than any elements in list *)
   Inductive ngt (a: A): list A -> Prop :=
@@ -173,16 +173,45 @@ Section TOPO_REORDER.
   (* | topo_reorder_trans l l' l'' :
       topo_reorder l l' -> topo_reorder l' l'' -> topo_reorder l l''. *)
 
-  Lemma ngt_cons_inv: forall x x0 l, ngt x (x0 :: l) -> ngt x l /\ ~R x0 x.
+  Lemma incl_nil: forall l: list A, incl l [] -> l = [].
+  Proof.
+    induction l; intros; auto.
+    assert(In a []). apply H; left; auto. exfalso; auto.
+  Qed.
+
+  Lemma ngt_cons_inv: forall x x0 l, ngt x (x0 :: l) -> ngt x l /\ ~ R x0 x.
   Proof.
     intros. inversion H.
     - subst. split; auto. apply ngt_nil.
     - subst. auto.
   Qed.
 
-  Lemma topo_reorder_is_permutation: forall l l', topo_reorder l l' -> Permutation l l'.
-  Proof. intros. induction H. apply perm_nil. apply perm_skip; auto.
-    - apply perm_swap. - eapply perm_trans; eauto. Qed.
+  Lemma ngt_app_inv_l: forall x l1 l2, ngt x (l1 ++ l2) -> ngt x l1.
+  Proof.
+    induction l1; intros. eapply ngt_nil.
+    inv H. eapply ngt_cons; eauto.
+    symmetry in H2; eapply app_eq_nil in H2 as []; subst. eapply ngt_nil.
+    eapply ngt_cons; eauto.
+  Qed.
+
+  Lemma ngt_app_inv_r: forall x l1 l2, ngt x (l1 ++ l2) -> ngt x l2.
+  Proof.
+    induction l1; intros; auto. eapply IHl1.
+    eapply ngt_cons_inv; eauto.
+  Qed.
+
+  Lemma ngt_app: forall x l1 l2, ngt x l1 -> ngt x l2 -> ngt x (l1 ++ l2).
+  Proof.
+    induction l1; intros; auto.
+    simpl; eapply ngt_cons. eapply IHl1; eauto.
+    eapply ngt_cons_inv; eauto. eapply ngt_cons_inv; eauto.
+  Qed.
+
+  (* Lemma topo_reorder_is_permutation: forall l l', topo_reorder l l' -> Permutation l l'.
+  Proof.
+    intros. induction H. apply perm_nil. apply perm_skip; auto.
+    - apply perm_swap. - eapply perm_trans; eauto.
+  Qed. *)
 
   Lemma topo_reorder_incl: forall l l', topo_reorder l l' -> List.incl l l'.
   Proof.
@@ -203,59 +232,238 @@ Section TOPO_REORDER.
     - eapply IHtopo_reorder1 in H0. eapply IHtopo_reorder2 in H0. auto.
   Qed.
 
-  Lemma topo_reorder_symmetry: forall l l', topo_reorder l l' -> topo_reorder l' l.
+
+  Lemma topo_sorted_cons_inv1:
+    forall x l, topo_sorted (x :: l) -> ngt x l.
+  Proof. intros. inv H. auto. Qed.
+
+  Lemma topo_sorted_cons_inv2:
+    forall x l, topo_sorted (x :: l) -> topo_sorted l.
+  Proof. intros. inv H. auto. Qed.
+
+  Lemma topo_sorted_split_l:
+    forall l1 l2, topo_sorted (l1 ++ l2) -> topo_sorted l1.
   Proof.
-    intros. induction H.
-    - apply topo_reorder_nil.
-    - apply topo_reorder_skip; auto. eapply topo_reorder_ngt_preserved; eauto.
-    - apply topo_reorder_swap; auto.
-    - eapply topo_reorder_trans; eauto.
+    induction l1. intros. eapply topo_sorted_nil.
+    intros. eapply topo_sorted_cons. inv H. eapply ngt_app_inv_l; eauto.
+    inv H. eapply IHl1; eauto.
   Qed.
 
-  Lemma topo_sorted_cons_inv:
-    forall x l, topo_sorted (x :: l) -> ngt x l /\ topo_sorted l.
-  Proof. intros. inv H. split; auto. Qed. 
+  Lemma topo_sorted_split_r:
+    forall l1 l2, topo_sorted (l1 ++ l2) -> topo_sorted l2.
+  Proof.
+    induction l1. intros. simpl; auto.
+    intros. eapply IHl1. eapply topo_sorted_cons_inv2; eauto.
+  Qed.
+
+  Lemma topo_sorted_remove: forall l1 a l2, topo_sorted (l1 ++ a :: l2) -> topo_sorted (l1 ++ l2).
+  Proof.
+    induction l1; intros.
+    - simpl in *. eapply topo_sorted_cons_inv2; eauto.
+    - simpl in H. eapply topo_sorted_cons_inv1 in H as ?.
+      eapply topo_sorted_cons_inv2 in H as ?. simpl; eapply topo_sorted_cons; eauto.
+      eapply ngt_app. eapply ngt_app_inv_l; eauto.
+      eapply ngt_app_inv_r in H0. eapply ngt_cons_inv; eauto.
+  Qed.
 
   Lemma topo_reorder_sort_preserved:
     forall l l', topo_reorder l l' -> topo_sorted l ->  topo_sorted l'.
   Proof.
     intros. induction H; simpl; auto.
-    - eapply topo_sorted_cons_inv in H0 as [].
+    - eapply topo_sorted_cons_inv1 in H0 as ?.
+      eapply topo_sorted_cons_inv2 in H0 as ?.
       eapply topo_sorted_cons.
       eapply topo_reorder_ngt_preserved; eauto. eapply IHtopo_reorder; auto.
     - inv H0. inv H5. eapply topo_sorted_cons. eapply ngt_cons; auto.
       eapply topo_sorted_cons; eauto. eapply ngt_cons_inv; eauto.
   Qed.
 
+  Lemma topo_reorder_cond_refl: forall l, topo_sorted l -> topo_reorder l l.
+  Proof.
+    induction l; intros. apply topo_reorder_nil.
+    inv H. eapply topo_reorder_skip; auto.
+  Qed.
+
+  Lemma topo_reorder_app: forall l1 l2 l, topo_sorted (l1 ++ l) ->
+    topo_reorder l1 l2 ->  topo_reorder (l1 ++ l) (l2 ++ l).
+  Proof.
+    intros. induction H0.
+    - eapply topo_reorder_cond_refl; auto.
+    - simpl in H. eapply topo_sorted_cons_inv1 in H as ?.
+      eapply topo_sorted_cons_inv2 in H as ?.
+      simpl. eapply topo_reorder_skip; auto.
+    - simpl. eapply topo_reorder_swap; auto.
+    - eapply IHtopo_reorder1 in H as ?.
+      eapply topo_reorder_sort_preserved in H0 as ?; eauto.
+      eapply IHtopo_reorder2 in H1. eapply topo_reorder_trans; auto.
+  Qed.
+
+  Lemma topo_reorder_symmetry: forall l l', topo_reorder l l' -> topo_reorder l' l.
+  Proof.
+    intros. induction H.
+    - apply topo_reorder_nil.
+    - apply topo_reorder_skip; auto. eapply topo_reorder_ngt_preserved; eauto.
+    - apply topo_reorder_swap; auto.
+    - eapply topo_reorder_trans; eauto. 
+  Qed.
+
+  Lemma topo_reorder_tail_to_head:
+    forall l a, topo_sorted (l ++ [a]) -> topo_sorted (a :: l) ->
+      ngt a l -> topo_reorder (l ++ [a]) (a :: l).
+  Proof.
+    induction l; intros; simpl.
+    - eapply topo_reorder_skip; auto. eapply topo_reorder_nil.
+    - eapply ngt_cons_inv in H1 as []. eapply IHl in H1 as ?.
+      assert(topo_reorder (a0 :: a :: l) (a :: a0 :: l)).
+      { simpl in H. inv H. eapply ngt_app_inv_r in H6.
+        inv H6; auto. eapply topo_reorder_swap; auto.
+        eapply topo_reorder_swap; auto. }
+      simpl in H. eapply topo_reorder_symmetry; eauto.
+      assert(topo_reorder (a :: a0 :: l) (a :: l ++ [a0])).
+      { eapply topo_reorder_skip. inv H. eapply ngt_cons.
+        eapply ngt_app_inv_l; eauto. 
+        eapply ngt_app_inv_r in H7; inv H7; eauto.
+        eapply topo_reorder_symmetry; auto.
+      }
+      eapply topo_reorder_trans; eauto.
+      replace ((a :: l) ++ [a0]) with ([a] ++ (l ++ [a0])) in H; auto.
+      eapply topo_sorted_split_r; eauto.
+      eapply topo_sorted_cons. inv H0. inv H5; auto.
+      eapply topo_sorted_cons_inv2. eapply topo_sorted_cons_inv2; eauto.
+  Qed.
+  
   (* exactly same elements *)
   Inductive NoDupSame: list A -> list A -> Prop :=
     | NoDupSame_intro:
-      forall l1 l2, NoDup l1 -> NoDup l2 -> incl l1 l2 -> incl l2 l2 ->
+      forall l1 l2, NoDup l1 -> NoDup l2 -> incl l1 l2 -> incl l2 l1 ->
         NoDupSame l1 l2
   .
 
-  Lemma sorted_same_elements_topo_reorder'_ind:
+
+
+  Lemma NoDupSame_nil: forall l, NoDupSame [] l -> l = [].
+  Proof. induction l; intros; auto. inv H. apply incl_nil; eauto. Qed.
+
+  (* Lemma list_common_head_split: forall l1 l2: list A,
+    exists lh l1' l2', l1 = lh ++ l1' /\ l2 = lh ++ l2'.
+  Proof. exists [], l1, l2. simpl. auto. Qed. *)
+    (* induction l1. intros.
+    - exists [], [], l2. split; auto.
+    - exist intros. eapply IHl1 in H as [lh [l1' [l2' [? []]]]].
+      subst. exists (a :: lh), l1', l2'. split; auto.
+  Admitted. *)
+
+  Lemma incl_remove: forall (a: A) l1 l2 l1' l2', NoDup (l1 ++ a :: l2) ->
+    incl (l1 ++ a :: l2) (l1' ++ a :: l2') -> incl (l1 ++ l2) (l1' ++ l2').
+  Proof.
+    intros. intro. intros. eapply in_or_app. eapply in_app_or in H1. destruct H1.
+    assert(a0 <> a). eapply NoDup_remove in H as [].
+    intro; subst. apply H2. apply in_or_app; eauto. 
+    assert(In a0 (l1' ++ a :: l2')). eapply H0. apply in_or_app; auto.
+    apply in_app_or in H3. destruct H3; auto. destruct H3; auto.
+    exfalso; apply H2; auto.
+    assert(a0 <> a). eapply NoDup_remove in H as [].
+    intro; subst. apply H2. apply in_or_app; eauto. 
+    assert(In a0 (l1' ++ a :: l2')). eapply H0.
+    apply in_or_app; right; right; auto.
+    apply in_app_or in H3. destruct H3; auto. destruct H3; auto.
+    exfalso; apply H2; auto.
+  Qed.
+
+  Lemma NoDupSame_remove: forall a l1 l2 l1' l2', 
+    NoDupSame (l1 ++ a :: l2) (l1' ++ a :: l2') -> NoDupSame (l1 ++ l2) (l1' ++ l2').
+  Proof.
+    intros. inv H. eapply NoDupSame_intro.
+    - eapply NoDup_remove_1; eauto.
+    - eapply NoDup_remove_1; eauto.
+    - intro; intros.
+      assert(a0 <> a). eapply NoDup_remove in H0 as [].
+      intro; subst. apply H4; auto.
+      assert(In a0 (l1' ++ a :: l2')). eapply H2.
+      apply in_app_or in H. destruct H. apply in_or_app; left; auto.
+      apply in_or_app; right; right; auto. eapply in_or_app.
+      eapply in_app_or in H5; destruct H5. left; auto. right. destruct H5; auto.
+      subst; exfalso; auto.
+    - intro; intros.
+      assert(a0 <> a). eapply NoDup_remove in H1 as [].
+      intro; subst. apply H4; auto.
+      assert(In a0 (l1 ++ a :: l2)). eapply H3.
+      apply in_app_or in H. destruct H. apply in_or_app; left; auto.
+      apply in_or_app; right; right; auto. eapply in_or_app.
+      eapply in_app_or in H5; destruct H5. left; auto. right. destruct H5; auto.
+      subst; exfalso; auto.
+  Qed.
+
+  Lemma ngt_incl: forall l1 l2 a, incl l1 l2 -> ngt a l2 -> ngt a l1.
+  Proof.
+    (* induction l1; intros. eapply ngt_nil.
+    eapply ngt_cons. assert(incl l1 l2). intro; intros; eapply H; right; auto.
+    eapply IHl1; eauto. *)
+
+    intros l1 l2; revert l1. induction l2.
+    intros. eapply incl_nil in H; subst; auto.
+    intros. inv H0. eapply IHl2.
+
+  Admitted.
+
+  Lemma NoDupSame_ngt: forall l1 l2 a, NoDupSame l1 l2 -> ngt a l1 -> ngt a l2.
+  Proof. intros. inv H. eapply ngt_incl; eauto. Qed.
+
+  Lemma sorted_same_elements_topo_reorder_ind:
     forall n,
     (forall k l1 l2, k < n -> length l1 = k -> NoDupSame l1 l2 ->  
               topo_sorted l1 -> topo_sorted l2 -> topo_reorder l1 l2) ->
     (forall l1 l2, length l1 = n -> NoDupSame l1 l2 ->  
               topo_sorted l1 -> topo_sorted l2 -> topo_reorder l1 l2) .
   Proof.
-    intros.
-
-  Admitted.
+    intros. destruct n.
+    - rewrite length_zero_iff_nil in H0; subst.
+      eapply NoDupSame_nil in H1; subst. eapply topo_reorder_nil.
+    - destruct l1. simpl in H0; inv H0. simpl in H0. inversion H0.
+      inversion H1 as []; subst. assert(In a l2). apply H7; left; auto.
+      eapply List.in_split in H5 as [l21 [l22]]. subst.
+      assert(topo_reorder (a::l1) (a::l21 ++ l22)).
+      { eapply topo_reorder_skip. inv H2; eauto.
+        eapply H; eauto.
+        - inv H1. assert(TMP: a :: l1 = [] ++ a :: l1); auto. 
+          rewrite TMP in H5, H7, H8. eapply NoDupSame_intro.
+          eapply (NoDup_remove_1 [] l1 a H4). eapply NoDup_remove_1; eauto.
+          eapply incl_remove in H7; eauto. eapply incl_remove in H8; eauto.
+        - eapply topo_sorted_cons_inv2; eauto.
+        - eapply topo_sorted_remove; eauto.
+      }
+      assert(topo_reorder (a::l21 ++ l22) (l21 ++ a :: l22)).
+      { assert(TMP1: l21 ++ a :: l22 = (l21 ++ [a]) ++ l22).
+        erewrite <- app_assoc; simpl; auto. rewrite TMP1.
+        assert(TMP2: a :: l21 ++ l22 = (a :: l21) ++ l22); auto. rewrite TMP2.
+        eapply topo_reorder_symmetry.  
+        eapply topo_reorder_app. rewrite <- app_assoc; auto.
+        eapply topo_reorder_tail_to_head.
+        replace (l21 ++ a :: l22) with ((l21 ++ [a]) ++ l22) in H3; auto.
+        eapply topo_sorted_split_l; eauto.
+        eapply topo_sorted_cons. replace (a :: l1) with ([] ++ [a] ++ l1) in H1; auto.
+        eapply NoDupSame_remove in H1. simpl in H1. eapply ngt_app_inv_l.
+        eapply NoDupSame_ngt; eauto. inv H2; auto.
+        eapply topo_sorted_split_l; eauto.
+        replace (a :: l1) with ([] ++ a :: l1) in H1; auto.
+        eapply NoDupSame_remove in H1 as ?. simpl in H9.
+        eapply NoDupSame_ngt in H9; eauto. eapply ngt_app_inv_l; eauto.
+        inv H2; auto.
+      }
+      eapply topo_reorder_trans; eauto.
+  Qed.
 
   Lemma sorted_same_elements_topo_reorder':
     forall n l1 l2, length l1 = n -> NoDupSame l1 l2 ->  
       topo_sorted l1 -> topo_sorted l2 -> topo_reorder l1 l2.
   Proof.
-    intros n. eapply sorted_same_elements_topo_reorder'_ind; eauto.
+    intros n. eapply sorted_same_elements_topo_reorder_ind; eauto.
     induction n.
     - intros. inv H.
     - intros. assert(k < n \/ k = n). inv H; auto.
       destruct H4.
       eapply IHn; eauto. subst.
-      eapply sorted_same_elements_topo_reorder'_ind; eauto.
+      eapply sorted_same_elements_topo_reorder_ind; eauto.
   Qed.
 
 
@@ -428,17 +636,22 @@ Section LIST_TOPO.
   Lemma treorder_self: treorder (numlistgen l) (numlistgen l).
   Proof. apply treorder_self'. Qed.
 
+  Lemma tsorted_self': forall i j, tsorted' i (numlistgen' l j ).
+  Proof. Admitted.
+
 End LIST_TOPO.
 
 
 Section SWAPPING_PROPERTY.
   Context {A: Type}.
   Variable Rb: A -> A -> bool.
-  Hypothesis SymmetricR: forall x y, Rb x y = true -> Rb y x = true.
+  Hypothesis SymmetricR: forall x y, Rb x y = Rb y x.
 
   Let Rbnum (na1 na2: positive * A) := Rb (snd na1) (snd na2).
   Let R := fun x y => Rb x y = true.
 
+  Lemma SymmetricRbnum: forall x y, Rbnum x y = Rbnum x y.
+  Proof. destruct x; destruct y. unfold Rbnum; simpl. rewrite SymmetricR; auto. Qed.
 
   Theorem swapping_property_general:
     forall l nl1 nl2, List.incl nl1 (numlistgen l) ->
@@ -466,11 +679,11 @@ Section SWAPPING_PROPERTY.
       remember (Rbnum y x) as b. destruct b; auto.
       exfalso. symmetry in Heqb.
       destruct (Pos.lt_total (fst x) (fst y)).
-      { apply H0. apply GenR_intro; auto. 
+      { apply H0. apply GenR_intro; auto.
         eapply List.incl_cons_inv in H as []; eauto.
         eapply List.incl_cons_inv in H4 as []; eauto.
         eapply List.incl_cons_inv in H as []; eauto.
-        unfold R. auto. } destruct H3.
+        unfold R. rewrite SymmetricR; auto. } destruct H3.
       { inv H1. apply H6. subst; left; auto. }
       { apply H2. apply GenR_intro; auto.
         eapply List.incl_cons_inv in H as[]; eauto.
