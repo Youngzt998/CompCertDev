@@ -394,17 +394,20 @@ Section TOPO_REORDER.
       subst; exfalso; auto.
   Qed.
 
+  Lemma ngt_in: forall x a l, ngt x l -> In a l -> ~ R a x.
+  Proof.
+    induction l; intros. exfalso; auto.
+    eapply ngt_cons_inv in H as []. destruct H0. subst; auto.
+    eapply IHl; auto.
+  Qed.
+
   Lemma ngt_incl: forall l1 l2 a, incl l1 l2 -> ngt a l2 -> ngt a l1.
   Proof.
-    (* induction l1; intros. eapply ngt_nil.
+    induction l1; intros. eapply ngt_nil.
     eapply ngt_cons. assert(incl l1 l2). intro; intros; eapply H; right; auto.
-    eapply IHl1; eauto. *)
-
-    intros l1 l2; revert l1. induction l2.
-    intros. eapply incl_nil in H; subst; auto.
-    intros. inv H0. eapply IHl2.
-
-  Admitted.
+    eapply IHl1; eauto.
+    assert(In a l2). apply H; left; auto. eapply ngt_in; eauto.
+  Qed.
 
   Lemma NoDupSame_ngt: forall l1 l2 a, NoDupSame l1 l2 -> ngt a l1 -> ngt a l2.
   Proof. intros. inv H. eapply ngt_incl; eauto. Qed.
@@ -1036,7 +1039,7 @@ Definition try_swap_nth_func (n: nat)(f: function):=
     mkfunction f.(fn_sig) f.(fn_stacksize) (try_swap_code n f.(fn_code)) .
 
 Lemma happens_before_symmetric: 
-  forall i1 i2, happens_before i1 i2 = true -> happens_before i2 i1 = true.
+  forall i1 i2, happens_before i1 i2 = happens_before i2 i1.
 Proof.
   intros. unfold happens_before in *. remember (solid_inst i1) as b. destruct b.
 Admitted. 
@@ -1360,8 +1363,7 @@ Inductive match_stackframe: stackframe -> stackframe -> Prop :=
       (LS: lsagree ls ls')
       (CODE: try_swap_code m c = c'),
       match_stackframe (Stackframe f sp ls c)
-                       (Stackframe f' sp' ls' c')
-.
+                       (Stackframe f' sp' ls' c').
 
 Definition match_stack := Forall2 match_stackframe.
 
@@ -2238,10 +2240,10 @@ Section ABSTRACT_SCHEDULER.
     forall l nl', schedule' (numlistgen l) = OK nl' ->
       exists ln, nl' = try_swap_seq HBnum ln (numlistgen l).
   Proof.
-    intros l. pose proof schedule_valid l.
-    unfold treorder in H.
-    eapply swapping_property in H as [ln]. exists ln; auto.
-    apply happens_before_symmetric.
+    intros. pose proof schedule_valid l.
+    unfold treorder in H0.
+    eapply swapping_property in H0 as [ln]; eauto.
+    intros; rewrite happens_before_symmetric; auto.
   Qed.
 
   Lemma swapping_lemma_block: 
