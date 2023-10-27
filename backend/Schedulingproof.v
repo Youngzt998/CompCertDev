@@ -639,8 +639,13 @@ Section LIST_TOPO.
   Lemma treorder_self: treorder (numlistgen l) (numlistgen l).
   Proof. apply treorder_self'. Qed.
 
-  Lemma tsorted_self': forall i j, tsorted' i (numlistgen' l j ).
-  Proof. Admitted.
+  Lemma tsorted_self': forall i j, tsorted' i (numlistgen' l j).
+  Proof. 
+    induction l; intros; simpl. eapply topo_sorted_nil.
+    eapply topo_sorted_cons.
+    - admit.
+    - eapply IHl0.
+  Admitted.
 
 End LIST_TOPO.
 
@@ -2247,9 +2252,9 @@ Section ABSTRACT_SCHEDULER.
   Qed.
 
   Lemma swapping_lemma_block: 
-    forall l, exists ln, schedule l = try_swap_seq happens_before ln l.
+    forall l l', schedule l = OK l' -> exists ln, l' = try_swap_seq happens_before ln l.
   Proof.
-    intros. unfold schedule. edestruct swapping_lemma_numblock as [ln].
+    intros. monadInv H. edestruct swapping_lemma_numblock as [ln]; eauto.
     exists ln. erewrite H. eapply try_swap_seq_num_equally.
   Qed.
 
@@ -2302,14 +2307,24 @@ Section ABSTRACT_SCHEDULER.
     - intros. exists []. simpl. unfold transf_program_try_swap_seq; simpl; auto.
     - intros. unfold schedule_program in H. monadInv H.
       destruct a. destruct g. destruct f.
-      { simpl in EQ. monadInv EQ. 
+      { simpl in EQ. 
+        remember (do f' <- schedule_function f; OK (Internal f')) as res.
+        destruct res. 2: inv EQ. 
+        monadInv EQ. inv Heqres. symmetry in H0. monadInv H0.
         set(prog' :={| prog_defs := x0; prog_public := prog_public;
           prog_main := prog_main |}).
         specialize (IHprog_defs prog'). destruct IHprog_defs as [seq0]; auto.
         unfold schedule_program. unfold transform_partial_program2. simpl.
         rewrite EQ0; simpl; auto.
         inv H. set(seq0' := List.map (fun x => (Datatypes.S (fst x), snd x)) seq0 ).
-        pose proof swapping_lemma_block (fn_code f) as [ln]. rewrite H.
+        pose proof swapping_lemma_block (fn_code f) as [ln]; eauto.
+
+        instantiate (1 := fn_code x). unfold schedule_function in EQ.
+        monadInv EQ. erewrite EQ1; eauto.
+
+        (* unfold schedule_function in EQ.
+        monadInv EQ. *)
+
         set(seq1 := List.map (fun n => (O, n)) ln).
         exists (seq0' ++ seq1).
         unfold transf_program_try_swap_seq; simpl.
@@ -2329,6 +2344,8 @@ Section ABSTRACT_SCHEDULER.
         assert(try_swap_prog_def_seq seq1 prog_defs1 = prog_defs2).
         eapply schedule_program_swapping_lemma_prepare2; eauto.
         erewrite schedule_program_swapping_lemma_prepare3; eauto.
+        erewrite H1. unfold prog_defs2. unfold schedule_function in EQ.
+        monadInv EQ. simpl in H. subst; eauto.
       }
       { simpl in EQ. monadInv EQ.
         set(prog' :={| prog_defs := x0; prog_public := prog_public;
