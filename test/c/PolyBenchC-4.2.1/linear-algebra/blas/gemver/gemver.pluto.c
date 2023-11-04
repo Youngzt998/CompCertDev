@@ -13,7 +13,7 @@
  *
  * Web address: http://polybench.sourceforge.net
  */
-/* gemm.c: this file is part of PolyBench/C */
+/* gemver.c: this file is part of PolyBench/C */
 
 #include <stdio.h>
 #include <unistd.h>
@@ -24,50 +24,62 @@
 #include <polybench.h>
 
 /* Include benchmark-specific header. */
-#include "gemm.h"
+#include "gemver.h"
 
 
 /* Array initialization. */
 static
-void init_array(int ni, int nj, int nk,
-		DATA_TYPE *alpha,
-		DATA_TYPE *beta,
-		DATA_TYPE POLYBENCH_2D(C,NI,NJ,ni,nj),
-		DATA_TYPE POLYBENCH_2D(A,NI,NK,ni,nk),
-		DATA_TYPE POLYBENCH_2D(B,NK,NJ,nk,nj))
+void init_array (int n,
+		 DATA_TYPE *alpha,
+		 DATA_TYPE *beta,
+		 DATA_TYPE POLYBENCH_2D(A,N,N,n,n),
+		 DATA_TYPE POLYBENCH_1D(u1,N,n),
+		 DATA_TYPE POLYBENCH_1D(v1,N,n),
+		 DATA_TYPE POLYBENCH_1D(u2,N,n),
+		 DATA_TYPE POLYBENCH_1D(v2,N,n),
+		 DATA_TYPE POLYBENCH_1D(w,N,n),
+		 DATA_TYPE POLYBENCH_1D(x,N,n),
+		 DATA_TYPE POLYBENCH_1D(y,N,n),
+		 DATA_TYPE POLYBENCH_1D(z,N,n))
 {
   int i, j;
 
   *alpha = 1.5;
   *beta = 1.2;
-  for (i = 0; i < ni; i++)
-    for (j = 0; j < nj; j++)
-      C[i][j] = (DATA_TYPE) ((i*j+1) % ni) / ni;
-  for (i = 0; i < ni; i++)
-    for (j = 0; j < nk; j++)
-      A[i][j] = (DATA_TYPE) (i*(j+1) % nk) / nk;
-  for (i = 0; i < nk; i++)
-    for (j = 0; j < nj; j++)
-      B[i][j] = (DATA_TYPE) (i*(j+2) % nj) / nj;
+
+  DATA_TYPE fn = (DATA_TYPE)n;
+
+  for (i = 0; i < n; i++)
+    {
+      u1[i] = i;
+      u2[i] = ((i+1)/fn)/2.0;
+      v1[i] = ((i+1)/fn)/4.0;
+      v2[i] = ((i+1)/fn)/6.0;
+      y[i] = ((i+1)/fn)/8.0;
+      z[i] = ((i+1)/fn)/9.0;
+      x[i] = 0.0;
+      w[i] = 0.0;
+      for (j = 0; j < n; j++)
+        A[i][j] = (DATA_TYPE) (i*j % n) / n;
+    }
 }
 
 
 /* DCE code. Must scan the entire live-out data.
    Can be used also to check the correctness of the output. */
 static
-void print_array(int ni, int nj,
-		 DATA_TYPE POLYBENCH_2D(C,NI,NJ,ni,nj))
+void print_array(int n,
+		 DATA_TYPE POLYBENCH_1D(w,N,n))
 {
-  int i, j;
+  int i;
 
   POLYBENCH_DUMP_START;
-  POLYBENCH_DUMP_BEGIN("C");
-  for (i = 0; i < ni; i++)
-    for (j = 0; j < nj; j++) {
-	if ((i * ni + j) % 20 == 0) fprintf (POLYBENCH_DUMP_TARGET, "\n");
-	fprintf (POLYBENCH_DUMP_TARGET, DATA_PRINTF_MODIFIER, C[i][j]);
-    }
-  POLYBENCH_DUMP_END("C");
+  POLYBENCH_DUMP_BEGIN("w");
+  for (i = 0; i < n; i++) {
+    if (i % 20 == 0) fprintf (POLYBENCH_DUMP_TARGET, "\n");
+    fprintf (POLYBENCH_DUMP_TARGET, DATA_PRINTF_MODIFIER, w[i]);
+  }
+  POLYBENCH_DUMP_END("w");
   POLYBENCH_DUMP_FINISH;
 }
 
@@ -75,22 +87,21 @@ void print_array(int ni, int nj,
 /* Main computational kernel. The whole function will be timed,
    including the call and return. */
 static
-void kernel_gemm(int ni, int nj, int nk,
-		 DATA_TYPE alpha,
-		 DATA_TYPE beta,
-		 DATA_TYPE POLYBENCH_2D(C,NI,NJ,ni,nj),
-		 DATA_TYPE POLYBENCH_2D(A,NI,NK,ni,nk),
-		 DATA_TYPE POLYBENCH_2D(B,NK,NJ,nk,nj))
+void kernel_gemver(int n,
+		   DATA_TYPE alpha,
+		   DATA_TYPE beta,
+		   DATA_TYPE POLYBENCH_2D(A,N,N,n,n),
+		   DATA_TYPE POLYBENCH_1D(u1,N,n),
+		   DATA_TYPE POLYBENCH_1D(v1,N,n),
+		   DATA_TYPE POLYBENCH_1D(u2,N,n),
+		   DATA_TYPE POLYBENCH_1D(v2,N,n),
+		   DATA_TYPE POLYBENCH_1D(w,N,n),
+		   DATA_TYPE POLYBENCH_1D(x,N,n),
+		   DATA_TYPE POLYBENCH_1D(y,N,n),
+		   DATA_TYPE POLYBENCH_1D(z,N,n))
 {
-  int i, j, k;
+  int i, j;
 
-//BLAS PARAMS
-//TRANSA = 'N'
-//TRANSB = 'N'
-// => Form C := alpha*A*B + beta*C,
-//A is NIxNK
-//B is NKxNJ
-//C is NIxNJ
 /* Copyright (C) 1991-2018 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
@@ -127,70 +138,86 @@ void kernel_gemm(int ni, int nj, int nk,
    - 285 hentaigana
    - 3 additional Zanabazar Square characters */
 /* We do not support C11 <threads.h>.  */
-  int t1, t2, t3, t4, t5, t6, t7;
+  int t1, t2, t3, t4, t5, t6;
  register int lbv, ubv;
 /* Start of CLooG code */
-if ((_PB_NI >= 1) && (_PB_NJ >= 1)) {
-  for (t2=0;t2<=floord(_PB_NI-1,32);t2++) {
-    for (t3=0;t3<=floord(_PB_NJ-1,32);t3++) {
-      for (t4=32*t2;t4<=min(_PB_NI-1,32*t2+31);t4++) {
-        for (t5=32*t3;t5<=min(_PB_NJ-1,32*t3+31);t5++) {
-          C[t4][t5] *= beta;;
+if (_PB_N >= 1) {
+  for (t2=0;t2<=floord(_PB_N-1,32);t2++) {
+    for (t3=0;t3<=floord(_PB_N-1,32);t3++) {
+      // unroll(2,2) dtype(DATA_TYPE)
+      for (t4=32*t3;t4<=min(_PB_N-1,32*t3+31);t4++) {
+        for (t5=32*t2;t5<=min(_PB_N-1,32*t2+31);t5++) {
+          A[t4][t5] = A[t4][t5] + u1[t4] * v1[t5] + u2[t4] * v2[t5];;
+          x[t5] = x[t5] + beta * A[t4][t5] * y[t4];;
         }
       }
     }
   }
-  if (_PB_NK >= 1) {
-    for (t2=0;t2<=floord(_PB_NI-1,32);t2++) {
-      for (t3=0;t3<=floord(_PB_NJ-1,32);t3++) {
-        for (t4=0;t4<=floord(_PB_NK-1,32);t4++) {
-          // unroll(2,2,1) dtype(DATA_TYPE)
-          for (t5=32*t2;t5<=min(_PB_NI-1,32*t2+31);t5++) {
-            for (t6=32*t3;t6<=min(_PB_NJ-1,32*t3+31);t6++) {
-              for (t7=32*t4;t7<=min(_PB_NK-1,32*t4+31);t7++) {
-                C[t5][t6] += alpha * A[t5][t7] * B[t7][t6];;
-              }
-            }
-          }
+  for (t2=0;t2<=floord(_PB_N-1,32);t2++) {
+    for (t3=32*t2;t3<=min(_PB_N-1,32*t2+31);t3++) {
+      x[t3] = x[t3] + z[t3];;
+    }
+  }
+  for (t2=0;t2<=floord(_PB_N-1,32);t2++) {
+    for (t3=0;t3<=floord(_PB_N-1,32);t3++) {
+      // unroll(2,2) dtype(DATA_TYPE)
+      for (t4=32*t2;t4<=min(_PB_N-1,32*t2+31);t4++) {
+        for (t5=32*t3;t5<=min(_PB_N-1,32*t3+31);t5++) {
+          w[t4] = w[t4] + alpha * A[t4][t5] * x[t5];;
         }
       }
     }
   }
 }
 /* End of CLooG code */
-
 }
 
 
 int main(int argc, char** argv)
 {
   /* Retrieve problem size. */
-  int ni = NI;
-  int nj = NJ;
-  int nk = NK;
+  int n = N;
 
   /* Variable declaration/allocation. */
   DATA_TYPE alpha;
   DATA_TYPE beta;
-  POLYBENCH_2D_ARRAY_DECL(C,DATA_TYPE,NI,NJ,ni,nj);
-  POLYBENCH_2D_ARRAY_DECL(A,DATA_TYPE,NI,NK,ni,nk);
-  POLYBENCH_2D_ARRAY_DECL(B,DATA_TYPE,NK,NJ,nk,nj);
+  POLYBENCH_2D_ARRAY_DECL(A, DATA_TYPE, N, N, n, n);
+  POLYBENCH_1D_ARRAY_DECL(u1, DATA_TYPE, N, n);
+  POLYBENCH_1D_ARRAY_DECL(v1, DATA_TYPE, N, n);
+  POLYBENCH_1D_ARRAY_DECL(u2, DATA_TYPE, N, n);
+  POLYBENCH_1D_ARRAY_DECL(v2, DATA_TYPE, N, n);
+  POLYBENCH_1D_ARRAY_DECL(w, DATA_TYPE, N, n);
+  POLYBENCH_1D_ARRAY_DECL(x, DATA_TYPE, N, n);
+  POLYBENCH_1D_ARRAY_DECL(y, DATA_TYPE, N, n);
+  POLYBENCH_1D_ARRAY_DECL(z, DATA_TYPE, N, n);
+
 
   /* Initialize array(s). */
-  init_array (ni, nj, nk, &alpha, &beta,
-	      POLYBENCH_ARRAY(C),
+  init_array (n, &alpha, &beta,
 	      POLYBENCH_ARRAY(A),
-	      POLYBENCH_ARRAY(B));
+	      POLYBENCH_ARRAY(u1),
+	      POLYBENCH_ARRAY(v1),
+	      POLYBENCH_ARRAY(u2),
+	      POLYBENCH_ARRAY(v2),
+	      POLYBENCH_ARRAY(w),
+	      POLYBENCH_ARRAY(x),
+	      POLYBENCH_ARRAY(y),
+	      POLYBENCH_ARRAY(z));
 
   /* Start timer. */
   polybench_start_instruments;
 
   /* Run kernel. */
-  kernel_gemm (ni, nj, nk,
-	       alpha, beta,
-	       POLYBENCH_ARRAY(C),
-	       POLYBENCH_ARRAY(A),
-	       POLYBENCH_ARRAY(B));
+  kernel_gemver (n, alpha, beta,
+		 POLYBENCH_ARRAY(A),
+		 POLYBENCH_ARRAY(u1),
+		 POLYBENCH_ARRAY(v1),
+		 POLYBENCH_ARRAY(u2),
+		 POLYBENCH_ARRAY(v2),
+		 POLYBENCH_ARRAY(w),
+		 POLYBENCH_ARRAY(x),
+		 POLYBENCH_ARRAY(y),
+		 POLYBENCH_ARRAY(z));
 
   /* Stop and print timer. */
   polybench_stop_instruments;
@@ -198,12 +225,18 @@ int main(int argc, char** argv)
 
   /* Prevent dead-code elimination. All live-out data must be printed
      by the function call in argument. */
-  polybench_prevent_dce(print_array(ni, nj,  POLYBENCH_ARRAY(C)));
+  polybench_prevent_dce(print_array(n, POLYBENCH_ARRAY(w)));
 
   /* Be clean. */
-  POLYBENCH_FREE_ARRAY(C);
   POLYBENCH_FREE_ARRAY(A);
-  POLYBENCH_FREE_ARRAY(B);
+  POLYBENCH_FREE_ARRAY(u1);
+  POLYBENCH_FREE_ARRAY(v1);
+  POLYBENCH_FREE_ARRAY(u2);
+  POLYBENCH_FREE_ARRAY(v2);
+  POLYBENCH_FREE_ARRAY(w);
+  POLYBENCH_FREE_ARRAY(x);
+  POLYBENCH_FREE_ARRAY(y);
+  POLYBENCH_FREE_ARRAY(z);
 
   return 0;
 }

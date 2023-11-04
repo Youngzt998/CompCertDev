@@ -144,12 +144,22 @@ if ((_PB_NI >= 1) && (_PB_NJ >= 1)) {
     for (t2=0;t2<=floord(_PB_NI-1,32);t2++) {
       for (t3=0;t3<=floord(_PB_NJ-1,32);t3++) {
         for (t4=0;t4<=floord(_PB_NK-1,32);t4++) {
-          // unroll(2,2,1) dtype(DATA_TYPE)
-          for (t5=32*t2;t5<=min(_PB_NI-1,32*t2+31);t5++) {
-            for (t6=32*t3;t6<=min(_PB_NJ-1,32*t3+31);t6++) {
+          for (t5=32*t2;t5<=min(_PB_NI-1,32*t2+31)-1;t5+=2) {
+            for (t6=32*t3;t6<=min(_PB_NJ-1,32*t3+31)-1;t6+=2) {
+              DATA_TYPE __r0 = C[t5][t6];
+              DATA_TYPE __r1 = C[t5][(t6+1)];
+              DATA_TYPE __r2 = C[(t5+1)][t6];
+              DATA_TYPE __r3 = C[(t5+1)][(t6+1)];
               for (t7=32*t4;t7<=min(_PB_NK-1,32*t4+31);t7++) {
-                C[t5][t6] += alpha * A[t5][t7] * B[t7][t6];;
+                __r0 += alpha * A[t5][t7] * B[t7][t6];;
+                __r1 += alpha * A[t5][t7] * B[t7][(t6+1)];;
+                __r2 += alpha * A[(t5+1)][t7] * B[t7][t6];;
+                __r3 += alpha * A[(t5+1)][t7] * B[t7][(t6+1)];;
               }
+              C[t5][t6] = __r0;
+              C[t5][(t6+1)] = __r1;
+              C[(t5+1)][t6] = __r2;
+              C[(t5+1)][(t6+1)] = __r3;
             }
           }
         }
@@ -207,3 +217,4 @@ int main(int argc, char** argv)
 
   return 0;
 }
+
