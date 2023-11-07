@@ -155,6 +155,7 @@ if (_PB_N >= 1) {
     }
     for (t4=1;t4<=t2-1;t4++) {
       w2[t2][t4] = A[t2][t4];;
+      // unroll(4) dtype(DATA_TYPE) remain(True)
       for (t6=0;t6<=t4-1;t6++) {
         w2[t2][t4] -= A[t2][t6] * A[t6][t4];;
       }
