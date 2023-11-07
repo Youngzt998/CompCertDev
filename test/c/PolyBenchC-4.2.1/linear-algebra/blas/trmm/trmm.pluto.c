@@ -132,7 +132,7 @@ if ((_PB_M >= 1) && (_PB_N >= 1)) {
     for (t2=0;t2<=floord(_PB_N-1,32);t2++) {
       for (t3=0;t3<=floord(_PB_M-1,32);t3++) {
         for (t4=0;t4<=min(floord(_PB_M-2,32),t3);t4++) {
-          // unroll(2,2,1) dtype(DATA_TYPE)
+          // unroll(2,2,1) dtype(DATA_TYPE) remain(True,True,False)
           for (t5=max(32*t3,32*t4+1);t5<=min(_PB_M-1,32*t3+31);t5++) {
             for (t6=32*t4;t6<=min(32*t4+31,t5-1);t6++) {
               for (t7=32*t2;t7<=min(_PB_N-1,32*t2+31);t7++) {

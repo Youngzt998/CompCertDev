@@ -148,8 +148,8 @@ if ((_PB_M >= 1) && (_PB_N >= 1)) {
     for (t2=0;t2<=floord(_PB_M-1,32);t2++) {
       for (t3=0;t3<=floord(_PB_N-1,32);t3++) {
         for (t4=0;t4<=min(floord(_PB_M-2,32),t2);t4++) {
-          int __up = min(_PB_M-1,32*t2+31);
-          for (t5=max(32*t2,32*t4+1);t5<=__up-1;t5+=2) {
+          int __up1 = min(_PB_M-1,32*t2+31);
+          for (t5=max(32*t2,32*t4+1);t5<=__up1-1;t5+=2) {
             for (t6=32*t3;t6<=min(_PB_N-1,32*t3+31)-1;t6+=2) {
               DATA_TYPE __r0 = temp2[t5][t6];
               DATA_TYPE __r1 = temp2[t5][(t6+1)];
@@ -161,7 +161,7 @@ if ((_PB_M >= 1) && (_PB_N >= 1)) {
                 __r2 += B[t7][t6] * A[(t5+1)][t7];;
                 __r3 += B[t7][(t6+1)] * A[(t5+1)][t7];;
               }
-              for (;t7<=min(32*t4+31,t5-1+1);t7++) {
+              for (;t7<=min(32*t4+31,t5);t7++) {
                 __r2 += B[t7][t6] * A[(t5+1)][t7];;
                 __r3 += B[t7][(t6+1)] * A[(t5+1)][t7];;
               }
@@ -171,7 +171,7 @@ if ((_PB_M >= 1) && (_PB_N >= 1)) {
               temp2[(t5+1)][(t6+1)] = __r3;
             }
           }
-          for (;t5<=__up;t5++) {
+          for (;t5<=__up1;t5++) {
             for (t6=32*t3;t6<=min(_PB_N-1,32*t3+31)-1;t6+=2) {
               DATA_TYPE __r0 = temp2[t5][t6];
               DATA_TYPE __r1 = temp2[t5][(t6+1)];
@@ -201,8 +201,8 @@ if ((_PB_M >= 1) && (_PB_N >= 1)) {
       for (t3=0;t3<=floord(_PB_M-2,32);t3++) {
         for (t4=t3;t4<=floord(_PB_M-1,32);t4++) {
           for (t5=32*t2;t5<=min(_PB_N-1,32*t2+31)-1;t5+=2) {
-            int __up = min(min(_PB_M-2,32*t3+31),32*t4+30);
-            for (t6=32*t3;t6<=__up-1;t6+=2) {
+            int __up2 = min(min(_PB_M-2,32*t3+31),32*t4+30);
+            for (t6=32*t3;t6<=__up2-1;t6+=2) {
               DATA_TYPE __r0 = C[t6][t5];
               DATA_TYPE __r1 = C[(t6+1)][t5];
               DATA_TYPE __r2 = C[t6][(t5+1)];
@@ -223,7 +223,7 @@ if ((_PB_M >= 1) && (_PB_N >= 1)) {
               C[t6][(t5+1)] = __r2;
               C[(t6+1)][(t5+1)] = __r3;
             }
-            for (;t6<=__up;t6++) {
+            for (;t6<=__up2;t6++) {
               DATA_TYPE __r0 = C[t6][t5];
               DATA_TYPE __r2 = C[t6][(t5+1)];
               for (t7=max(32*t4,t6+1);t7<=min(_PB_M-1,32*t4+31);t7++) {
