@@ -154,7 +154,8 @@ if (_PB_N >= 1) {
     if ((_PB_M >= 1) && (t2 <= _PB_N-2)) {
       for (t4=ceild(t2-30,32);t4<=floord(_PB_N-1,32);t4++) {
         for (t6=0;t6<=floord(_PB_M-1,32);t6++) {
-          for (t7=max(32*t4,t2+1);t7<=min(_PB_N-1,32*t4+31)-1;t7+=2) {
+          int __up1 = min(_PB_N-1,32*t4+31);
+          for (t7=max(32*t4,t2+1);t7<=__up1-1;t7+=2) {
             DATA_TYPE __r0 = R[t2][t7];
             DATA_TYPE __r1 = R[t2][(t7+1)];
             for (t9=32*t6;t9<=min(_PB_M-1,32*t6+31)-1;t9+=2) {
@@ -166,7 +167,7 @@ if (_PB_N >= 1) {
             R[t2][t7] = __r0;
             R[t2][(t7+1)] = __r1;
           }
-          for (;t7<=min(_PB_N-1,32*t4+31);t7++) {
+          for (;t7<=__up1;t7++) {
             DATA_TYPE __r0 = R[t2][t7];
             for (t9=32*t6;t9<=min(_PB_M-1,32*t6+31)-1;t9+=2) {
               __r0 += Q[t9][t2] * A[t9][t7];;
@@ -176,7 +177,8 @@ if (_PB_N >= 1) {
           }
         }
         for (t6=0;t6<=floord(_PB_M-1,32);t6++) {
-          for (t7=max(32*t4,t2+1);t7<=min(_PB_N-1,32*t4+31)-1;t7+=2) {
+          int __up2 = min(_PB_N-1,32*t4+31);
+          for (t7=max(32*t4,t2+1);t7<=__up2-1;t7+=2) {
             DATA_TYPE __r0 = R[t2][t7];
             DATA_TYPE __r1 = R[t2][(t7+1)];
             for (t9=32*t6;t9<=min(_PB_M-1,32*t6+31)-1;t9+=2) {
@@ -186,7 +188,7 @@ if (_PB_N >= 1) {
               A[(t9+1)][(t7+1)] = A[(t9+1)][(t7+1)] - Q[(t9+1)][t2] * __r1;;
             }
           }
-          for (;t7<=min(_PB_N-1,32*t4+31);t7++) {
+          for (;t7<=__up2;t7++) {
             DATA_TYPE __r0 = R[t2][t7];
             for (t9=32*t6;t9<=min(_PB_M-1,32*t6+31)-1;t9+=2) {
               A[t9][t7] = A[t9][t7] - Q[t9][t2] * __r0;;

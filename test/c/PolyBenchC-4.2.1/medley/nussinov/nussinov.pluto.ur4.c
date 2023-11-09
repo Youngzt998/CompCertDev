@@ -149,13 +149,14 @@ if (_PB_N >= 2) {
           table[-t5][t7] = max_score(table[-t5][t7], table[-t5+1][t7]);;
           table[-t5][t7] = max_score(table[-t5][t7], table[-t5+1][t7-1]+match(seq[-t5], seq[t7]));;
           DATA_TYPE __r0 = table[-t5][t7];
-          for (t9=-t5+1;t9<=t7-1-3;t9+=4) {
+          int __up1 = t7-1;
+          for (t9=-t5+1;t9<=__up1-3;t9+=4) {
             __r0 = max_score(__r0, table[-t5][t9] + table[t9+1][t7]);;
             __r0 = max_score(__r0, table[-t5][(t9+1)] + table[(t9+1)+1][t7]);;
             __r0 = max_score(__r0, table[-t5][(t9+2)] + table[(t9+2)+1][t7]);;
             __r0 = max_score(__r0, table[-t5][(t9+3)] + table[(t9+3)+1][t7]);;
           }
-          for (;t9<=t7-1;t9++) {
+          for (;t9<=__up1;t9++) {
             __r0 = max_score(__r0, table[-t5][t9] + table[t9+1][t7]);;
           }
           table[-t5][t7] = __r0;
@@ -167,13 +168,14 @@ if (_PB_N >= 2) {
           table[-t5][t7] = max_score(table[-t5][t7], table[-t5+1][t7]);;
           table[-t5][t7] = max_score(table[-t5][t7], table[-t5+1][t7-1]+match(seq[-t5], seq[t7]));;
           DATA_TYPE __r0 = table[-t5][t7];
-          for (t9=-t5+1;t9<=t7-1-3;t9+=4) {
+          int __up2 = t7-1;
+          for (t9=-t5+1;t9<=__up2-3;t9+=4) {
             __r0 = max_score(__r0, table[-t5][t9] + table[t9+1][t7]);;
             __r0 = max_score(__r0, table[-t5][(t9+1)] + table[(t9+1)+1][t7]);;
             __r0 = max_score(__r0, table[-t5][(t9+2)] + table[(t9+2)+1][t7]);;
             __r0 = max_score(__r0, table[-t5][(t9+3)] + table[(t9+3)+1][t7]);;
           }
-          for (;t9<=t7-1;t9++) {
+          for (;t9<=__up2;t9++) {
             __r0 = max_score(__r0, table[-t5][t9] + table[t9+1][t7]);;
           }
           table[-t5][t7] = __r0;
