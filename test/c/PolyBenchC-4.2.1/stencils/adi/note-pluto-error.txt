@@ -1,0 +1,7 @@
+NOTE:
+
+The PLUTO-parallelized code, adi-cast.pluto.c, produces different output from adi.c and adi-cast.c.
+ - PLUTO option: --tile --noprevector
+  -- With the version of pluto-0.11.4
+ - GCC option: -O3 -I utilities utilities/polybench.c -DPOLYBENCH_TIME -DPOLYBENCH_DUMP_ARRAYS -I stencils/adi
+  -- When compiled at PolyBenchC-4.2.1 directory
