@@ -29,7 +29,7 @@ Require Import Memory.
 Require Import Events.
 Require Import Globalenvs.
 Require Import Smallstep.
-Require Import Ctypes.
+Require Import CTypes.
 Require Import Cop.
 
 (** * Abstract syntax *)
@@ -147,7 +147,7 @@ Definition var_names (vars: list(ident * type)) : list ident :=
 (** Functions can either be defined ([Internal]) or declared as
   external functions ([External]). *)
 
-Definition fundef := Ctypes.fundef function.
+Definition fundef := CTypes.fundef function.
 
 (** The type of a function definition. *)
 
@@ -162,7 +162,7 @@ Definition type_of_fundef (f: fundef) : type :=
 
 (** ** Programs *)
 
-(** As defined in module [Ctypes], a program, or compilation unit, is
+(** As defined in module [CTypes], a program, or compilation unit, is
   composed of:
 - a list of definitions of functions and global variables;
 - the names of functions and global variables that are public (not static);
@@ -171,7 +171,7 @@ Definition type_of_fundef (f: fundef) : type :=
 - the corresponding composite environment
 - a proof that this environment is consistent with the definitions. *)
 
-Definition program := Ctypes.program function.
+Definition program := CTypes.program function.
 
 (** * Operational semantics *)
 

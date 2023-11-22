@@ -31,7 +31,7 @@
 *)
 
 open Camlcoq
-open Ctypes
+open CTypes
 open Clight
 
 let gen_next : AST.ident ref = ref P.one

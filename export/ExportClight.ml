@@ -19,11 +19,11 @@
 open Format
 open Camlcoq
 open AST
-open! Ctypes
+open! CTypes
 open Cop
 open Clight
 open ExportBase
-open ExportCtypes
+open ExportCTypes
 
 (* Expressions *)
 
@@ -150,14 +150,14 @@ let print_function p (id, f) =
 
 let print_globdef p (id, gd) =
   match gd with
-  | Gfun(Ctypes.Internal f) -> print_function p (id, f)
-  | Gfun(Ctypes.External _) -> ()
+  | Gfun(CTypes.Internal f) -> print_function p (id, f)
+  | Gfun(CTypes.External _) -> ()
   | Gvar v -> print_variable typ p (id, v)
 
 let print_ident_globdef p = function
-  | (id, Gfun(Ctypes.Internal f)) ->
+  | (id, Gfun(CTypes.Internal f)) ->
       fprintf p "(%a, Gfun(Internal f%s))" ident id (sanitize (extern_atom id))
-  | (id, Gfun(Ctypes.External(ef, targs, tres, cc))) ->
+  | (id, Gfun(CTypes.External(ef, targs, tres, cc))) ->
       fprintf p "@[<hov 2>(%a,@ @[<hov 2>Gfun(External %a@ %a@ %a@ %a))@]@]"
         ident id external_function ef typlist targs typ tres callconv cc
   | (id, Gvar v) ->
@@ -167,7 +167,7 @@ let print_ident_globdef p = function
 
 let prologue = "\
 From Coq Require Import String List ZArith.\n\
-From compcert Require Import Coqlib Integers Floats AST Ctypes Cop Clight Clightdefs.\n\
+From compcert Require Import Coqlib Integers Floats AST CTypes Cop Clight Clightdefs.\n\
 Import Clightdefs.ClightNotations.\n\
 Local Open Scope Z_scope.\n\
 Local Open Scope string_scope.\n\
@@ -220,11 +220,11 @@ let name_function f =
 
 let name_globdef (id, g) =
   match g with
-  | Gfun(Ctypes.Internal f) -> name_function f
+  | Gfun(CTypes.Internal f) -> name_function f
   | _ -> ()
 
 let name_program p =
-  List.iter name_globdef p.Ctypes.prog_defs
+  List.iter name_globdef p.CTypes.prog_defs
 
 (* All together *)
 
@@ -235,17 +235,17 @@ let print_program p prog sourcefile normalized =
   fprintf p "%s" prologue;
   print_gen_info ~sourcefile ~normalized p;
   define_idents p;
-  List.iter (print_globdef p) prog.Ctypes.prog_defs;
+  List.iter (print_globdef p) prog.CTypes.prog_defs;
   fprintf p "Definition composites : list composite_definition :=@ ";
   print_list print_composite_definition p prog.prog_types;
   fprintf p ".@ @ ";
   fprintf p "Definition global_definitions : list (ident * globdef fundef type) :=@ ";
-  print_list print_ident_globdef p prog.Ctypes.prog_defs;
+  print_list print_ident_globdef p prog.CTypes.prog_defs;
   fprintf p ".@ @ ";
   fprintf p "Definition public_idents : list ident :=@ ";
-  print_list ident p prog.Ctypes.prog_public;
+  print_list ident p prog.CTypes.prog_public;
   fprintf p ".@ @ ";
   fprintf p "Definition prog : Clight.program := @ ";
   fprintf p "  mkprogram composites global_definitions public_idents %a Logic.I.@ @ "
-            ident prog.Ctypes.prog_main;
+            ident prog.CTypes.prog_main;
   fprintf p "@]@."

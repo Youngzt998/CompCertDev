@@ -19,7 +19,7 @@ open C
 open Camlcoq
 open! Floats
 open Values
-open Ctypes
+open CTypes
 open Csyntax
 
 (** ** Extracting information about global variables from their atom *)
@@ -349,7 +349,7 @@ let make_builtin_va_arg_by_ref helper ty arg =
 
 let make_builtin_va_arg env ty e =
   match ty with
-  | Ctypes.Tint _ ->
+  | CTypes.Tint _ ->
       make_builtin_va_arg_by_val
         "__compcert_va_int32" ty (Tint(I32, Unsigned, noattr)) e
   | Tpointer _ when Archi.ptr64 = false ->
@@ -404,7 +404,7 @@ let convertCallconv _tres targs va attr =
 
 let convertIkind k a : coq_type =
     match k with
-  | C.IBool -> Tint (Ctypes.IBool, Unsigned, a)
+  | C.IBool -> Tint (CTypes.IBool, Unsigned, a)
   | C.IChar -> Tint (I8, (if Machine.((!config).char_signed)
                           then Signed else Unsigned), a)
   | C.ISChar -> Tint (I8, Signed, a)
@@ -472,7 +472,7 @@ let rec convertTyp env ?bitwidth t =
   | C.TNamed _ ->
       convertTyp env ?bitwidth (Cutil.unroll env t)
   | C.TStruct(id, a) ->
-      Ctypes.Tstruct(intern_string id.name, convertAttr a)
+      CTypes.Tstruct(intern_string id.name, convertAttr a)
   | C.TUnion(id, a) ->
       Tunion(intern_string id.name, convertAttr a)
   | C.TEnum(id, a) ->
@@ -543,8 +543,8 @@ let convertCompositedef env su id attr members =
     unsupported "packed struct (consider adding option [-fpacked-structs])";
   let intern_name = intern_string id.name in
   let (t, su') = match su with
-    | C.Struct -> TStruct (id, attr), Ctypes.Struct
-    | C.Union -> TUnion (id, attr), Ctypes.Union in
+    | C.Struct -> TStruct (id, attr), CTypes.Struct
+    | C.Union -> TUnion (id, attr), CTypes.Union in
   Debug.set_composite_size id intern_name su (Cutil.sizeof env t);
   let ms = List.map (convertField env intern_name) members in
   Composite(intern_name, su', ms, convertAttr attr)
@@ -1155,7 +1155,7 @@ let convertFundef loc env fd =
       a_access = Sections.Access_default;
       a_inline = inline;
       a_loc = loc };
-  (id',  AST.Gfun(Ctypes.Internal
+  (id',  AST.Gfun(CTypes.Internal
           {fn_return = ret;
            fn_callconv = convertCallconv fd.fd_ret (Some fd.fd_params)
                                          fd.fd_vararg fd.fd_attrib;
@@ -1182,7 +1182,7 @@ let convertFundecl env (sto, id, ty, optinit) =
     && List.mem_assoc id.name builtins.builtin_functions
     then AST.EF_builtin(id'', sg)
     else AST.EF_external(id'', sg) in
-  (id',  AST.Gfun(Ctypes.External(ef, args, res, cconv)))
+  (id',  AST.Gfun(CTypes.External(ef, args, res, cconv)))
 
 (** Initializers *)
 
@@ -1217,8 +1217,8 @@ let convertGlobvar loc env (sto, id, ty, optinit) =
   let id' = intern_string id.name in
   Debug.atom_global id id';
   let ty' = convertTyp env ty in
-  let sz = Ctypes.sizeof !comp_env ty' in
-  let al = Ctypes.alignof !comp_env ty' in
+  let sz = CTypes.sizeof !comp_env ty' in
+  let al = CTypes.alignof !comp_env ty' in
   let attr = Cutil.attributes_of_type env ty in
   let init' =
     match optinit with
@@ -1369,7 +1369,7 @@ let helper_function_declaration (name, tyres, tyargs) =
     AST.EF_runtime(coqstring_of_camlstring name,
                    signature_of_type tyargs tyres AST.cc_default) in
   (intern_string name,
-   AST.Gfun (Ctypes.External(ef, tyargs, tyres, AST.cc_default)))
+   AST.Gfun (CTypes.External(ef, tyargs, tyres, AST.cc_default)))
 
 let add_helper_functions globs =
   List.map helper_function_declaration (helper_functions()) @ globs
@@ -1477,8 +1477,8 @@ let debug_set_struct_mem_ofs sid ((id, byte_ofs), bits) =
 let debug_set_struct_ofs env typs =
   if !Clflags.option_g then
     List.iter (function
-        | Composite (sid, Ctypes.Struct, ms, a) ->
-          let layout = Ctypes.layout_struct env ms in
+        | Composite (sid, CTypes.Struct, ms, a) ->
+          let layout = CTypes.layout_struct env ms in
           begin match layout with
             | Errors.OK layout ->
               List.iter (debug_set_struct_mem_ofs sid) layout

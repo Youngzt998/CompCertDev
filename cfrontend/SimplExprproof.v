@@ -16,7 +16,7 @@ Require Import FunInd.
 Require Import Coqlib Maps Errors Integers.
 Require Import AST Linking.
 Require Import Values Memory Events Globalenvs Smallstep.
-Require Import Ctypes Cop Csyntax Csem Cstrategy Clight.
+Require Import CTypes Cop Csyntax Csem Cstrategy Clight.
 Require Import SimplExpr SimplExprspec.
 
 (** ** Relational specification of the translation. *)
@@ -2442,7 +2442,7 @@ End PRESERVATION.
 
 Global Instance TransfSimplExprLink : TransfLink match_prog.
 Proof.
-  red; intros. eapply Ctypes.link_match_program_gen; eauto. 
+  red; intros. eapply CTypes.link_match_program_gen; eauto. 
 - intros.
 Local Transparent Linker_fundef.
   simpl in *; unfold link_fundef in *. inv H3; inv H4; try discriminate.

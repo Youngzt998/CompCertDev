@@ -22,7 +22,7 @@ Require Import Integers.
 Require Import Floats.
 Require Import Values.
 Require Import Memory.
-Require Import Ctypes.
+Require Import CTypes.
 Require Archi.
 
 (** * Syntax of operators. *)

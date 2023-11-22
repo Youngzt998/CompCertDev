@@ -20,7 +20,7 @@ open Values
 open Memory
 open Globalenvs
 open Events
-open! Ctypes
+open! CTypes
 open Csyntax
 open Csem
 
@@ -83,16 +83,16 @@ let name_of_fundef prog fd =
       if fd == fd' then extern_atom id else find_name rem
   | (id, Gvar v) :: rem ->
       find_name rem
-  in find_name prog.Ctypes.prog_defs
+  in find_name prog.CTypes.prog_defs
 
 let name_of_function prog fn =
   let rec find_name = function
   | [] -> "<unknown function>"
-  | (id, Gfun(Ctypes.Internal fn')) :: rem ->
+  | (id, Gfun(CTypes.Internal fn')) :: rem ->
       if fn == fn' then extern_atom id else find_name rem
   | (id, _) :: rem ->
       find_name rem
-  in find_name prog.Ctypes.prog_defs
+  in find_name prog.CTypes.prog_defs
 
 let invert_local_variable e b =
   Maps.PTree.fold
@@ -583,16 +583,16 @@ let world_program prog =
         (id, Gvar gv')
     | Gfun fd ->
         (id, gd) in
- {prog with Ctypes.prog_defs = List.map change_def prog.Ctypes.prog_defs}
+ {prog with CTypes.prog_defs = List.map change_def prog.CTypes.prog_defs}
 
 (* Massaging the program to get a suitable "main" function *)
 
 let change_main_function p new_main_fn =
   let new_main_id = intern_string "%main%" in
   { p with
-    Ctypes.prog_main = new_main_id;
-    Ctypes.prog_defs =
-      (new_main_id, Gfun(Internal new_main_fn)) :: p.Ctypes.prog_defs }
+    CTypes.prog_main = new_main_id;
+    CTypes.prog_defs =
+      (new_main_id, Gfun(Internal new_main_fn)) :: p.CTypes.prog_defs }
 
 let call_main3_function main_id main_ty =
   let main_var = Evalof(Evar(main_id, main_ty), main_ty) in
@@ -620,27 +620,27 @@ let rec find_main_function name = function
        find_main_function name gdl
 
 let fixup_main p =
-  match find_main_function p.Ctypes.prog_main p.Ctypes.prog_defs with
+  match find_main_function p.CTypes.prog_main p.CTypes.prog_defs with
   | None ->
       fprintf err_formatter "ERROR: no entry function %s()@."
-                            (extern_atom p.Ctypes.prog_main);
+                            (extern_atom p.CTypes.prog_main);
       None
   | Some main_fd ->
       match type_of_fundef main_fd with
-      | Tfunction(Tnil, Ctypes.Tint(I32, Signed, _), _) ->
+      | Tfunction(Tnil, CTypes.Tint(I32, Signed, _), _) ->
           Some p
-      | Tfunction(Tcons(Ctypes.Tint _,
-                  Tcons(Tpointer(Tpointer(Ctypes.Tint(I8,_,_),_),_), Tnil)),
-                  Ctypes.Tint _, _) as ty ->
+      | Tfunction(Tcons(CTypes.Tint _,
+                  Tcons(Tpointer(Tpointer(CTypes.Tint(I8,_,_),_),_), Tnil)),
+                  CTypes.Tint _, _) as ty ->
           Some (change_main_function p
-                   (call_main3_function p.Ctypes.prog_main ty))
+                   (call_main3_function p.CTypes.prog_main ty))
       | Tfunction(Tnil, ty_res, _) as ty ->
           Some (change_main_function p
-                   (call_other_main_function p.Ctypes.prog_main ty ty_res))
+                   (call_other_main_function p.CTypes.prog_main ty ty_res))
       | _ ->
           fprintf err_formatter
              "ERROR: wrong type for entry function %s()@."
-             (extern_atom p.Ctypes.prog_main);
+             (extern_atom p.CTypes.prog_main);
           None
 
 (* Execution of a whole program *)

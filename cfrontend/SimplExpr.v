@@ -14,7 +14,7 @@
     Side effects are pulled out of Compcert C expressions. *)
 
 Require Import Coqlib Maps Integers Floats Values AST Memory Errors.
-Require Import Ctypes Cop Csyntax Clight.
+Require Import CTypes Cop Csyntax Clight.
 
 Local Open Scope string_scope.
 Local Open Scope list_scope.

@@ -26,7 +26,7 @@ Require Import Memory.
 Require Import Events.
 Require Import Globalenvs.
 Require Import Smallstep.
-Require Import Ctypes.
+Require Import CTypes.
 Require Import Cop.
 Require Import Clight.
 

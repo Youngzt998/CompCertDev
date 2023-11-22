@@ -14,7 +14,7 @@
 
 Require Import Coqlib Maps Errors Integers Floats.
 Require Import AST Linking Memory.
-Require Import Ctypes Cop Csyntax Clight SimplExpr.
+Require Import CTypes Cop Csyntax Clight SimplExpr.
 
 Section SPEC.
 

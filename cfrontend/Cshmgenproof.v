@@ -15,7 +15,7 @@
 Require Import Coqlib Errors Maps Integers Floats.
 Require Import AST Linking.
 Require Import Values Events Memory Globalenvs Smallstep.
-Require Import Ctypes Ctyping Cop Clight Cminor Csharpminor.
+Require Import CTypes Ctyping Cop Clight Cminor Csharpminor.
 Require Import Cshmgen.
 
 (** * Relational specification of the transformation *)
@@ -23,10 +23,10 @@ Require Import Cshmgen.
 Inductive match_fundef (p: Clight.program) : Clight.fundef -> Csharpminor.fundef -> Prop :=
   | match_fundef_internal: forall f tf,
       transl_function p.(prog_comp_env) f = OK tf ->
-      match_fundef p (Ctypes.Internal f) (AST.Internal tf)
+      match_fundef p (CTypes.Internal f) (AST.Internal tf)
   | match_fundef_external: forall ef args res cc,
       ef_sig ef = signature_of_type args res cc ->
-      match_fundef p (Ctypes.External ef args res cc) (AST.External ef).
+      match_fundef p (CTypes.External ef args res cc) (AST.External ef).
 
 Definition match_varinfo (v: type) (tv: unit) := True.
 
@@ -82,35 +82,35 @@ Lemma transl_sizeof:
   forall (cunit prog: Clight.program) t sz,
   linkorder cunit prog ->
   sizeof cunit.(prog_comp_env) t = OK sz ->
-  sz = Ctypes.sizeof prog.(prog_comp_env) t.
+  sz = CTypes.sizeof prog.(prog_comp_env) t.
 Proof.
   intros. destruct H.
   unfold sizeof in H0. destruct (complete_type (prog_comp_env cunit) t) eqn:C; inv H0.
-  symmetry. apply Ctypes.sizeof_stable; auto.
+  symmetry. apply CTypes.sizeof_stable; auto.
 Qed.
 
 Lemma transl_alignof:
   forall (cunit prog: Clight.program) t al,
   linkorder cunit prog ->
   alignof cunit.(prog_comp_env) t = OK al ->
-  al = Ctypes.alignof prog.(prog_comp_env) t.
+  al = CTypes.alignof prog.(prog_comp_env) t.
 Proof.
   intros. destruct H.
   unfold alignof in H0. destruct (complete_type (prog_comp_env cunit) t) eqn:C; inv H0.
-  symmetry. apply Ctypes.alignof_stable; auto.
+  symmetry. apply CTypes.alignof_stable; auto.
 Qed.
 
 Lemma transl_alignof_blockcopy:
   forall (cunit prog: Clight.program) t sz,
   linkorder cunit prog ->
   sizeof cunit.(prog_comp_env) t = OK sz ->
-  sz = Ctypes.sizeof prog.(prog_comp_env) t /\
+  sz = CTypes.sizeof prog.(prog_comp_env) t /\
   alignof_blockcopy cunit.(prog_comp_env) t = alignof_blockcopy prog.(prog_comp_env) t.
 Proof.
   intros. destruct H.
   unfold sizeof in H0. destruct (complete_type (prog_comp_env cunit) t) eqn:C; inv H0.
   split.
-- symmetry. apply Ctypes.sizeof_stable; auto.
+- symmetry. apply CTypes.sizeof_stable; auto.
 - revert C. induction t; simpl; auto;
   destruct (prog_comp_env cunit)!i as [co|] eqn:X; try discriminate; erewrite H1 by eauto; auto.
 Qed.
@@ -127,7 +127,7 @@ Proof.
   { apply build_composite_env_consistent with cunit.(prog_types) id; auto.
     apply prog_comp_env_eq. }
   destruct H as [_ A].
-  split. auto. apply Ctypes.union_field_offset_stable; eauto using co_consistent_complete.
+  split. auto. apply CTypes.union_field_offset_stable; eauto using co_consistent_complete.
 Qed.
 
 Lemma field_offset_stable:
@@ -142,7 +142,7 @@ Proof.
   { apply build_composite_env_consistent with cunit.(prog_types) id; auto.
     apply prog_comp_env_eq. }
   destruct H as [_ A].
-  split. auto. apply Ctypes.field_offset_stable; eauto using co_consistent_complete.
+  split. auto. apply CTypes.field_offset_stable; eauto using co_consistent_complete.
 Qed.
 
 (** * Properties of the translation functions *)
@@ -671,7 +671,7 @@ Proof.
   assert (Ptrofs.agree32 (ptrofs_of_int si i0) i0) by (destruct si; simpl; auto with ptrofs).
   auto with ptrofs.
 - rewrite (transl_sizeof _ _ _ _ LINK EQ) in EQ0. clear EQ.
-  set (sz := Ctypes.sizeof (prog_comp_env prog) ty) in *.
+  set (sz := CTypes.sizeof (prog_comp_env prog) ty) in *.
   destruct va; InvEval; destruct vb; InvEval.
   destruct (eq_block b0 b1); try discriminate.
   destruct (zlt 0 sz); try discriminate.
@@ -974,7 +974,7 @@ Proof.
   { econstructor; eauto using make_intconst_correct. cbn.
     unfold amount1 at 1; rewrite int_ltu_true by lia. auto. } 
   econstructor; eauto using make_intconst_correct.
-  destruct (Ctypes.intsize_eq sz IBool || Ctypes.signedness_eq sg Unsigned); cbn.
+  destruct (CTypes.intsize_eq sz IBool || CTypes.signedness_eq sg Unsigned); cbn.
   + unfold amount2 at 1; rewrite int_ltu_true by lia. 
     rewrite Int.unsigned_bitfield_extract_by_shifts by lia. auto.
   + unfold amount2 at 1; rewrite int_ltu_true by lia. 
@@ -1103,7 +1103,7 @@ Record match_env (e: Clight.env) (te: Csharpminor.env) : Prop :=
   mk_match_env {
     me_local:
       forall id b ty,
-      e!id = Some (b, ty) -> te!id = Some(b, Ctypes.sizeof ge ty);
+      e!id = Some (b, ty) -> te!id = Some(b, CTypes.sizeof ge ty);
     me_local_inv:
       forall id b sz,
       te!id = Some (b, sz) -> exists ty, e!id = Some(b, ty)
@@ -1127,13 +1127,13 @@ Proof.
   intros.
   set (R := fun (x: (block * type)) (y: (block * Z)) =>
          match x, y with
-         | (b1, ty), (b2, sz) => b2 = b1 /\ sz = Ctypes.sizeof ge ty
+         | (b1, ty), (b2, sz) => b2 = b1 /\ sz = CTypes.sizeof ge ty
          end).
   assert (list_forall2
             (fun i_x i_y => fst i_x = fst i_y /\ R (snd i_x) (snd i_y))
             (PTree.elements e) (PTree.elements te)).
   apply PTree.elements_canonical_order.
-  intros id [b ty] GET. exists (b, Ctypes.sizeof ge ty); split. eapply me_local; eauto. red; auto.
+  intros id [b ty] GET. exists (b, CTypes.sizeof ge ty); split. eapply me_local; eauto. red; auto.
   intros id [b sz] GET. exploit me_local_inv; eauto. intros [ty EQ].
   exploit me_local; eauto. intros EQ1.
   exists (b, ty); split. auto. red; split; congruence.
@@ -1182,7 +1182,7 @@ Proof.
 - inv H0. exists te1; split. constructor. auto.
 - monadInv H2. monadInv EQ. simpl in *.
   exploit transl_sizeof. eexact H. eauto. intros SZ; rewrite SZ.
-  exploit (IHalloc_variables x0 (PTree.set id (b1, Ctypes.sizeof ge ty) te1)).
+  exploit (IHalloc_variables x0 (PTree.set id (b1, CTypes.sizeof ge ty) te1)).
   auto.
   constructor.
     (* me_local *)
@@ -1972,7 +1972,7 @@ Global Instance TransfCshmgenLink : TransfLink match_prog.
 Proof.
   red; intros. destruct (link_linkorder _ _ _ H) as (LO1 & LO2).
   generalize H.
-Local Transparent Ctypes.Linker_program.
+Local Transparent CTypes.Linker_program.
   simpl; unfold link_program.
   destruct (link (program_of_program p1) (program_of_program p2)) as [pp|] eqn:LP; try discriminate.
   destruct (lift_option (link (prog_types p1) (prog_types p2))) as [[typs EQ]|P]; try discriminate.

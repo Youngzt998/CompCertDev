@@ -16,7 +16,7 @@ Require Import FSets.
 Require Import Coqlib Errors Ordered Maps Integers Floats.
 Require Import AST Linking.
 Require Import Values Memory Globalenvs Events Smallstep.
-Require Import Ctypes Cop Clight SimplLocals.
+Require Import CTypes Cop Clight SimplLocals.
 
 Module VSF := FSetFacts.Facts(VSet).
 Module VSP := FSetProperties.Properties(VSet).
@@ -2321,7 +2321,7 @@ End PRESERVATION.
 
 Global Instance TransfSimplLocalsLink : TransfLink match_prog.
 Proof.
-  red; intros. eapply Ctypes.link_match_program; eauto. 
+  red; intros. eapply CTypes.link_match_program; eauto. 
 - intros.
 Local Transparent Linker_fundef.
   simpl in *; unfold link_fundef in *.

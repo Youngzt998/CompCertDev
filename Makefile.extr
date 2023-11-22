@@ -48,6 +48,7 @@ DIRS=extraction \
   export debug
 
 INCLUDES=$(patsubst %,-I %, $(DIRS))
+DUNE_INCLUDES=-I "$(shell pwd)/_build/default/my"
 
 # Control of warnings:
 
@@ -64,7 +65,7 @@ else
 WARN_ERRORS=
 endif
 
-COMPFLAGS+=-g -strict-sequence -safe-string $(INCLUDES) -I "$(MENHIR_DIR)" $(WARNINGS) $(WARN_ERRORS)
+COMPFLAGS+=-g -strict-sequence -safe-string $(INCLUDES) $(DUNE_INCLUDES) -I "$(MENHIR_DIR)" $(WARNINGS) $(WARN_ERRORS)
 
 # Using .opt compilers if available
 
@@ -74,8 +75,10 @@ else
 DOTOPT=
 endif
 
-OCAMLC=ocamlc$(DOTOPT) $(COMPFLAGS)
-OCAMLOPT=ocamlopt$(DOTOPT) $(COMPFLAGS)
+PACKAGES=ctypes
+
+OCAMLC=ocamlfind ocamlc -package $(PACKAGES) $(COMPFLAGS)
+OCAMLOPT=ocamlfind ocamlopt -package $(PACKAGES) $(COMPFLAGS)
 OCAMLDEP=ocamldep$(DOTOPT) -slash $(INCLUDES)
 
 OCAMLLEX=ocamllex -q
@@ -86,7 +89,15 @@ PARSERS=cparser/pre_parser.mly
 LEXERS=cparser/Lexer.mll lib/Tokenize.mll \
 	     lib/Readconfig.mll lib/Responsefile.mll
 
-LIBS=str.cmxa unix.cmxa $(MENHIR_LIBS)
+# Extra libraries that need to be linked
+# Order is important
+STDLIB_SHIMS_DIR=$(shell ocamlfind query stdlib-shims)
+INTEGERS_DIR=$(shell ocamlfind query integers)
+BIGARRAY_COMPAT_DIR=$(shell ocamlfind query bigarray-compat)
+
+LIBS=str.cmxa unix.cmxa $(MENHIR_LIBS) \
+	 _build/default/my/prioritizer.cmxa
+
 LIBS_BYTE=$(patsubst %.cmxa,%.cma,$(patsubst %.cmx,%.cmo,$(LIBS)))
 
 EXECUTABLES=ccomp ccomp.byte cchecklink cchecklink.byte clightgen clightgen.byte
@@ -101,6 +112,7 @@ CCOMP_OBJS:=$(shell $(MODORDER) driver/Driver.cmx)
 ifeq ($(OCAML_NATIVE_COMP),true)
 ccomp: $(CCOMP_OBJS)
 	@echo "Linking $@"
+	dune build my
 	@$(OCAMLOPT) -o $@ $(LIBS) $(LINK_OPT) $+
 else
 ccomp: ccomp.byte

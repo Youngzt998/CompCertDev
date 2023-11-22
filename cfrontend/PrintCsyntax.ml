@@ -20,7 +20,7 @@ open Format
 open Camlcoq
 open Values
 open AST
-open! Ctypes
+open! CTypes
 open Cop
 open Csyntax
 
@@ -86,13 +86,13 @@ let name_optid id =
 
 let rec name_cdecl id ty =
   match ty with
-  | Ctypes.Tvoid ->
+  | CTypes.Tvoid ->
       "void" ^ name_optid id
-  | Ctypes.Tint(sz, sg, a) ->
+  | CTypes.Tint(sz, sg, a) ->
       name_inttype sz sg ^ attributes a ^ name_optid id
-  | Ctypes.Tfloat(sz, a) ->
+  | CTypes.Tfloat(sz, a) ->
       name_floattype sz ^ attributes a ^ name_optid id
-  | Ctypes.Tlong(sg, a) ->
+  | CTypes.Tlong(sg, a) ->
       name_longtype sg ^ attributes a ^ name_optid id
   | Tpointer(t, a) ->
       let id' =
@@ -175,7 +175,7 @@ let print_pointer_hook
 
 let print_typed_value p v ty =
   match v, ty with
-  | Vint n, Ctypes.Tint(I32, Unsigned, _) ->
+  | Vint n, CTypes.Tint(I32, Unsigned, _) ->
       fprintf p "%luU" (camlint_of_coqint n)
   | Vint n, _ ->
       fprintf p "%ld" (camlint_of_coqint n)
@@ -183,7 +183,7 @@ let print_typed_value p v ty =
       fprintf p "%.15F" (camlfloat_of_coqfloat f)
   | Vsingle f, _ ->
       fprintf p "%.15Ff" (camlfloat_of_coqfloat32 f)
-  | Vlong n, Ctypes.Tlong(Unsigned, _) ->
+  | Vlong n, CTypes.Tlong(Unsigned, _) ->
       fprintf p "%LuLLU" (camlint64_of_coqint n)
   | Vlong n, _ ->
       fprintf p "%LdLL" (camlint64_of_coqint n)
@@ -430,17 +430,17 @@ let print_function p id f =
 
 let print_fundef p id fd =
   match fd with
-  | Ctypes.External((EF_external _ | EF_runtime _| EF_malloc | EF_free), args, res, cconv) ->
+  | CTypes.External((EF_external _ | EF_runtime _| EF_malloc | EF_free), args, res, cconv) ->
       fprintf p "extern %s;@ @ "
                 (name_cdecl (extern_atom id) (Tfunction(args, res, cconv)))
-  | Ctypes.External(_, _, _, _) ->
+  | CTypes.External(_, _, _, _) ->
       ()
-  | Ctypes.Internal f ->
+  | CTypes.Internal f ->
       print_function p id f
 
 let print_fundecl p id fd =
   match fd with
-  | Ctypes.Internal f ->
+  | CTypes.Internal f ->
       let linkage = if C2C.atom_is_static id then "static" else "extern" in
       fprintf p "%s %s;@ @ " linkage
                 (name_cdecl (extern_atom id) (Csyntax.type_of_function f))
@@ -502,7 +502,7 @@ let print_globvar p id v =
       fprintf p "@[<hov 2>%s = "
               (name_cdecl name2 v.gvar_info);
       begin match v.gvar_info, v.gvar_init with
-      | (Ctypes.Tint _ | Ctypes.Tlong _ | Ctypes.Tfloat _ | Tpointer _ | Tfunction _),
+      | (CTypes.Tint _ | CTypes.Tlong _ | CTypes.Tfloat _ | Tpointer _ | Tfunction _),
         [i1] ->
           print_init p i1
       | _, il ->
@@ -552,8 +552,8 @@ let print_program p prog =
   fprintf p "@[<v 0>";
   List.iter (declare_composite p) prog.prog_types;
   List.iter (define_composite p) prog.prog_types;
-  List.iter (print_globdecl p) prog.Ctypes.prog_defs;
-  List.iter (print_globdef p) prog.Ctypes.prog_defs;
+  List.iter (print_globdecl p) prog.CTypes.prog_defs;
+  List.iter (print_globdef p) prog.CTypes.prog_defs;
   fprintf p "@]@."
 
 let destination : string option ref = ref None

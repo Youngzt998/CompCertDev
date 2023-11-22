@@ -16,7 +16,7 @@
 
 open Format
 open Camlcoq
-open Ctypes
+open CTypes
 open ExportBase
 
 (* Raw attributes *)
@@ -60,7 +60,7 @@ let rec typ p t =
 
 and rtyp p = function
   | Tvoid -> fprintf p "tvoid"
-  | Ctypes.Tint(sz, sg, _) ->
+  | CTypes.Tint(sz, sg, _) ->
       fprintf p "%s" (
         match sz, sg with
         | I8, Signed -> "tschar"
@@ -70,12 +70,12 @@ and rtyp p = function
         | I32, Signed -> "tint"
         | I32, Unsigned -> "tuint"
         | IBool, _ -> "tbool")
-  | Ctypes.Tlong(sg, _) ->
+  | CTypes.Tlong(sg, _) ->
       fprintf p "%s" (
         match sg with
         | Signed -> "tlong"
         | Unsigned -> "tulong")
-  | Ctypes.Tfloat(sz, _) ->
+  | CTypes.Tfloat(sz, _) ->
       fprintf p "%s" (
         match sz with
         | F32 -> "tfloat"

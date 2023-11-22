@@ -34,7 +34,7 @@ Foundation GNU Lesser General Public License, either version 2.1 or
   cfrontend/Csem.v
   cfrontend/Cstrategy.v
   cfrontend/Csyntax.v
-  cfrontend/Ctypes.v
+  cfrontend/CTypes.v
   cfrontend/Ctyping.v
   cfrontend/PrintClight.ml
   cfrontend/PrintCsyntax.ml

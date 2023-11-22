@@ -18,7 +18,7 @@
 
 Require Import Coqlib Maps Integers Floats Errors.
 Require Import AST Linking Values.
-Require Import Ctypes Cop.
+Require Import CTypes Cop.
 
 (** ** Expressions *)
 
@@ -199,7 +199,7 @@ Definition var_names (vars: list(ident * type)) : list ident :=
 (** Functions can either be defined ([Internal]) or declared as
   external functions ([External]). *)
 
-Definition fundef := Ctypes.fundef function.
+Definition fundef := CTypes.fundef function.
 
 (** The type of a function definition. *)
 
@@ -214,7 +214,7 @@ Definition type_of_fundef (f: fundef) : type :=
 
 (** ** Programs and compilation units *)
 
-(** As defined in module [Ctypes], a program, or compilation unit, is
+(** As defined in module [CTypes], a program, or compilation unit, is
   composed of:
 - a list of definitions of functions and global variables;
 - the names of functions and global variables that are public (not static);
@@ -223,4 +223,4 @@ Definition type_of_fundef (f: fundef) : type :=
 - the corresponding composite environment
 - a proof that this environment is consistent with the definitions. *)
 
-Definition program := Ctypes.program function.
+Definition program := CTypes.program function.

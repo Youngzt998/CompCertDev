@@ -22,7 +22,7 @@
 
 Require Import Coqlib Maps Errors Integers Floats.
 Require Import AST Linking.
-Require Import Ctypes Cop Clight Cminor Csharpminor.
+Require Import CTypes Cop Clight Cminor Csharpminor.
 Require Import Conventions1.
 
 Local Open Scope string_scope.
@@ -125,12 +125,12 @@ Definition make_cmpu_ne_zero (e: expr) :=
 
 Definition sizeof (ce: composite_env) (t: type) : res Z :=
   if complete_type ce t
-  then OK (Ctypes.sizeof ce t)
+  then OK (CTypes.sizeof ce t)
   else Error (msg "incomplete type").
 
 Definition alignof (ce: composite_env) (t: type) : res Z :=
   if complete_type ce t
-  then OK (Ctypes.alignof ce t)
+  then OK (CTypes.alignof ce t)
   else Error (msg "incomplete type").
 
 (** [make_cast from to e] applies to [e] the numeric conversions needed
@@ -428,7 +428,7 @@ Definition make_store_bitfield (sz: intsize) (sg: signedness) (pos width: Z)
 
 Definition make_memcpy (ce: composite_env) (dst src: expr) (ty: type) :=
   do sz <- sizeof ce ty;
-  OK (Sbuiltin None (EF_memcpy sz (Ctypes.alignof_blockcopy ce ty))
+  OK (Sbuiltin None (EF_memcpy sz (CTypes.alignof_blockcopy ce ty))
                     (dst :: src :: nil)).
 
 (** [make_store addr ty bf rhs] stores the value of the

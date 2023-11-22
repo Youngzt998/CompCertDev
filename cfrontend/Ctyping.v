@@ -20,7 +20,7 @@ Require Import String.
 Require Import Coqlib Maps Integers Floats Errors.
 Require Import AST Linking.
 Require Import Values Memory Globalenvs Builtins Events.
-Require Import Ctypes Cop Csyntax Csem.
+Require Import CTypes Cop Csyntax Csem.
 
 Local Open Scope error_monad_scope.
 
@@ -984,7 +984,7 @@ Lemma binarith_type_cast:
   forall t1 t2 m t,
   binarith_type t1 t2 m = OK t -> wt_cast t1 t /\ wt_cast t2 t.
 Proof.
-Local Transparent Ctypes.intsize_eq.
+Local Transparent CTypes.intsize_eq.
   unfold wt_cast, binarith_type, classify_binarith; intros; DestructCases;
   simpl; split; try congruence;
   try (destruct Archi.ptr64; congruence).
@@ -1017,7 +1017,7 @@ Lemma wt_cast_int:
   forall i1 s1 a1 i2 s2 a2, wt_cast (Tint i1 s1 a1) (Tint i2 s2 a2).
 Proof.
   intros; red; simpl.
-  destruct Archi.ptr64; [ | destruct (Ctypes.intsize_eq i2 I32)].
+  destruct Archi.ptr64; [ | destruct (CTypes.intsize_eq i2 I32)].
 - destruct i2; congruence.
 - subst i2; congruence.
 - destruct i2; congruence.

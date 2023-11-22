@@ -17,7 +17,7 @@ Require Import FSets.
 Require FSetAVL.
 Require Import Coqlib Ordered Errors.
 Require Import AST Linking.
-Require Import Ctypes Cop Clight.
+Require Import CTypes Cop Clight.
 Require Compopts Conventions1.
 
 Open Scope error_monad_scope.

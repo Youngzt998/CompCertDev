@@ -18,7 +18,7 @@
 
 Require Import Coqlib Errors Maps.
 Require Import Integers Floats Values AST Memory Builtins Events Globalenvs.
-Require Import Ctypes Cop Csyntax.
+Require Import CTypes Cop Csyntax.
 Require Import Smallstep.
 
 (** * Operational semantics *)
