@@ -177,4 +177,5 @@ Separate Extraction
    AST.signature_main
    Floats.Float32.from_parsed Floats.Float.from_parsed
    Globalenvs.Senv.invert_symbol
-   Parser.translation_unit_file.
+   Parser.translation_unit_file
+   Scheduling.schedule.

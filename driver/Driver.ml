@@ -20,6 +20,7 @@ open Frontend
 open Assembler
 open Linker
 open Diagnostics
+open Scheduling
 
 (* Name used for version string etc. *)
 let tool_name = "C verified compiler"
@@ -424,3 +425,5 @@ let _ =
   | CmdError msg -> error no_loc "%s" msg; exit 2
   | Abort -> error_summary (); exit 2
   | e -> crash e
+
+let _foo = schedule

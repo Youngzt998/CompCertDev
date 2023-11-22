@@ -1,6 +1,8 @@
 open Ctypes
 
-let prioritize nodes n edges m =
+let prioritize _ _ _ _ = ()
+
+let foo nodes n edges m =
   (* First, we will need to convert them to C arrays *)
   let nodes_arr = CArray.of_list int nodes in
   let edges_arr =

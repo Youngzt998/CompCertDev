@@ -48,7 +48,9 @@ DIRS=extraction \
   export debug
 
 INCLUDES=$(patsubst %,-I %, $(DIRS))
-DUNE_INCLUDES=-I "$(shell pwd)/_build/default/my"
+DUNE_INCLUDES=-I "$(shell pwd)/_build/default/my" \
+	-I "$(shell pwd)/_build/default/my/.prioritizer.objs/byte" \
+	-I "$(shell pwd)/_build/default/my/.prioritizer.objs/native"
 
 # Control of warnings:
 
@@ -77,8 +79,8 @@ endif
 
 PACKAGES=ctypes
 
-OCAMLC=ocamlfind ocamlc -package $(PACKAGES) $(COMPFLAGS)
-OCAMLOPT=ocamlfind ocamlopt -package $(PACKAGES) $(COMPFLAGS)
+OCAMLC=ocamlfind ocamlc -linkpkg -package $(PACKAGES) $(COMPFLAGS)
+OCAMLOPT=ocamlfind ocamlopt -linkpkg -package $(PACKAGES) $(COMPFLAGS)
 OCAMLDEP=ocamldep$(DOTOPT) -slash $(INCLUDES)
 
 OCAMLLEX=ocamllex -q
