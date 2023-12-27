@@ -674,9 +674,7 @@ void set_priority_slack(int *priority, int *nodes, int n, int **edges, int m) {
   Return
    - priority: 1-D array with size of n
 */
-int *prioritizer(int *nodes, int n, int **edges, int m) {
-  int alg_type_id = 0;  // ALG_CP
-  int arc_type_id = 0;  // ARC_U74RISCV
+int *prioritizer_impl(int *nodes, int n, int **edges, int m, int alg_type_id, int arc_type_id) {
   char *warning = 0;
   int *priority = (int *) calloc(n, sizeof(int));
 
@@ -703,5 +701,12 @@ int *prioritizer(int *nodes, int n, int **edges, int m) {
     warn_and_continue(warning);
   }
 
+  return priority;
+}
+
+int *prioritizer(int *nodes, int n, int **edges, int m) {
+  int alg_type_id = 0;  // ALG_CP
+  int arc_type_id = 0;  // ARC_U74RISCV
+  int *priority = prioritizer_impl(nodes, n, edges, m, alg_type_id, arc_type_id);
   return priority;
 }
