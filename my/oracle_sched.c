@@ -435,8 +435,8 @@ int verify_edges(int **edges, int m, int n) {
 /*
   Dummy entry and exit:
    - Given graph with n nodes, add dummy entry (id = n) and exit (id = n+1) nodes.
-   - Therefore, the total size of following arrays is n+2.
-    -- 1-D array with size n
+   - Therefore, the total size of following arrays is n+2 (n regular nodes + 2 dummy nodes).
+    -- 1-D array with size n+2
      --- path: Path length
      --- est: Earliest Start Time
      --- lst: Latest Start Time
