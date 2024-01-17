@@ -22,8 +22,12 @@ typedef enum _arc_type {
    - Chapter 6: Programmer’s Model
     -- Source of instruction list
    - Chapter 4: U7 RISC-V Core
+    -- 4.3 Execution Pipeline
+     --- The pipeline has a peak execution rate of two instructions per clock cycle,
+         and is fully bypassed so that most instructions have a one-cycle result latency
+          => One-cycle latency for default cost
     -- Table 18: U7 Instruction Latency
-     --- Three-cycle latency for LOAD/MUL => used as default cost
+     --- Three-cycle latency for LOAD/MUL => used as load/multiply cost
      --- Six-cycle to 68-cycle latency for DIV/REM => used as division operation cost
    - Appendix C: Floating-Point Unit Instruction Timing
     -- Table 177: U7 Single-Precision FPU Instruction Latency and Repeat Rates
@@ -35,32 +39,32 @@ typedef enum _arc_type {
  */
 #define NUM_INSTS_U74RISCV 220
 static int cost_table_u74riscv[NUM_INSTS_U74RISCV] = {
-  3,  // id 0: default (wild card)
+  1,  // id 0: default (wild card)
 
   // R-Type Integer Instructions (Table 36)
-  3,  // id 1: ADD
-  3,  // id 2: SUB
-  3,  // id 3: SLL
-  3,  // id 4: SLT
-  3,  // id 5: SLTU
-  3,  // id 6: SRL
-  3,  // id 7: SRA
-  3,  // id 8: OR
-  3,  // id 9: AND
-  3,  // id 10: XOR
+  1,  // id 1: ADD
+  1,  // id 2: SUB
+  1,  // id 3: SLL
+  1,  // id 4: SLT
+  1,  // id 5: SLTU
+  1,  // id 6: SRL
+  1,  // id 7: SRA
+  1,  // id 8: OR
+  1,  // id 9: AND
+  1,  // id 10: XOR
 
   // I-Type Integer Instructions (Table 38)
-  3,  // id 11: ADDI
-  3,  // id 12: SLTI
-  3,  // id 13: SLTIU
-  3,  // id 14: XORI
-  3,  // id 15: ORI
-  3,  // id 16: ANDI
-  3,  // id 17: SLLI
-  3,  // id 18: SRLI
-  3,  // id 19: SRAI
+  1,  // id 11: ADDI
+  1,  // id 12: SLTI
+  1,  // id 13: SLTIU
+  1,  // id 14: XORI
+  1,  // id 15: ORI
+  1,  // id 16: ANDI
+  1,  // id 17: SLLI
+  1,  // id 18: SRLI
+  1,  // id 19: SRAI
 
-  // I-Type Load Instructions (Table 40)
+  // I-Type Load Instructions (Table 40, latency from Table 18)
   3,  // id 20: LB
   3,  // id 21: LH
   3,  // id 22: LW
@@ -68,23 +72,23 @@ static int cost_table_u74riscv[NUM_INSTS_U74RISCV] = {
   3,  // id 24: LHU
 
   // S-Type Store Instructions (Table 42)
-  3,  // id 25: SB
-  3,  // id 26: SH
-  3,  // id 27: SW
+  1,  // id 25: SB
+  1,  // id 26: SH
+  1,  // id 27: SW
 
   // J-Type Instructions (Table 43)
-  3,  // id 28: JAL
-  3,  // id 29: JALR
+  1,  // id 28: JAL
+  1,  // id 29: JALR
 
   // B-Type Instructions (Table 45)
-  3,  // id 30: BEQ
-  3,  // id 31: BNE
-  3,  // id 32: BLT
-  3,  // id 33: BGE
-  3,  // id 34: BLTU
-  3,  // id 35: BGEU
+  1,  // id 30: BEQ
+  1,  // id 31: BNE
+  1,  // id 32: BLT
+  1,  // id 33: BGE
+  1,  // id 34: BLTU
+  1,  // id 35: BGEU
 
-  // Multiplication Operations (Table 47)
+  // Multiplication Operations (Table 47, latency from Table 18)
   3,  // id 36: MUL
   3,  // id 37: MULH
   3,  // id 38: MULHU
@@ -103,30 +107,30 @@ static int cost_table_u74riscv[NUM_INSTS_U74RISCV] = {
   37, // id 49: MULDIV
 
   // Atomic Load-Reserve and Store-Conditional Instructions (Table 49)
-  3,  // id 50: LR.W
-  3,  // id 51: SC.W
-  3,  // id 52: LR.D
-  3,  // id 53: SC.D
+  1,  // id 50: LR.W
+  1,  // id 51: SC.W
+  1,  // id 52: LR.D
+  1,  // id 53: SC.D
 
   // Atomic Memory Operations (Table 50)
-  3,  // id 54: AMOSWAP.W
-  3,  // id 55: AMOADD.W
-  3,  // id 56: AMOAND.W
-  3,  // id 57: AMOOR.W
-  3,  // id 58: AMOXOR.W
-  3,  // id 59: AMOMIN.W
-  3,  // id 60: AMOMINU.W
-  3,  // id 61: AMOMAX.W
-  3,  // id 62: AMOMAXU.W
-  3,  // id 63: AMOSWAP.D
-  3,  // id 64: AMOADD.D
-  3,  // id 65: AMOAND.D
-  3,  // id 66: AMOOR.D
-  3,  // id 67: AMOXOR.D
-  3,  // id 68: AMOMIN.D
-  3,  // id 69: AMOMINU.D
-  3,  // id 70: AMOMAX.D
-  3,  // id 71: AMOMAXU.D
+  1,  // id 54: AMOSWAP.W
+  1,  // id 55: AMOADD.W
+  1,  // id 56: AMOAND.W
+  1,  // id 57: AMOOR.W
+  1,  // id 58: AMOXOR.W
+  1,  // id 59: AMOMIN.W
+  1,  // id 60: AMOMINU.W
+  1,  // id 61: AMOMAX.W
+  1,  // id 62: AMOMAXU.W
+  1,  // id 63: AMOSWAP.D
+  1,  // id 64: AMOADD.D
+  1,  // id 65: AMOAND.D
+  1,  // id 66: AMOOR.D
+  1,  // id 67: AMOXOR.D
+  1,  // id 68: AMOMIN.D
+  1,  // id 69: AMOMINU.D
+  1,  // id 70: AMOMAX.D
+  1,  // id 71: AMOMAXU.D
 
   // Single-Precision FP Load and Store Instructions (Table 53, latency from Table 177)
   2,  // id 72: FLW
@@ -218,7 +222,7 @@ static int cost_table_u74riscv[NUM_INSTS_U74RISCV] = {
   // Double-Precision FP Classify Instructions (Table 69, latency from Table 178)
   4,  // id 133: FCLASS.D
 
-  // Stack-Pointed-Based Load Instructions (Table 70)
+  // Stack-Pointed-Based Load Instructions (Table 70, latency from Table 18)
   3,  // id 134: C.LWSP
   3,  // id 135: C.LDSP
   3,  // id 136: C.LQSP
@@ -226,14 +230,14 @@ static int cost_table_u74riscv[NUM_INSTS_U74RISCV] = {
   3,  // id 138: C.FLDSP
 
   // Stack-Pointed-Based Store Instructions (Table 71)
-  3,  // id 139: C.LWSP
-  3,  // id 140: C.SWSP
-  3,  // id 141: C.SDSP
-  3,  // id 142: C.SQSP
-  3,  // id 143: C.FSWSP
-  3,  // id 144: C.FSDSP
+  1,  // id 139: C.LWSP
+  1,  // id 140: C.SWSP
+  1,  // id 141: C.SDSP
+  1,  // id 142: C.SQSP
+  1,  // id 143: C.FSWSP
+  1,  // id 144: C.FSDSP
 
-  // Register-Based Load Instructions (Table 72)
+  // Register-Based Load Instructions (Table 72, latency from Table 18)
   3,  // id 145: C.LW
   3,  // id 146: C.LD
   3,  // id 147: C.LQ
@@ -241,112 +245,112 @@ static int cost_table_u74riscv[NUM_INSTS_U74RISCV] = {
   3,  // id 149: C.FLD
 
   // Register-Based Store Instructions (Table 73)
-  3,  // id 150: C.SW
-  3,  // id 151: C.SD
-  3,  // id 152: C.SQ
-  3,  // id 153: C.FSW
-  3,  // id 154: C.FSD
+  1,  // id 150: C.SW
+  1,  // id 151: C.SD
+  1,  // id 152: C.SQ
+  1,  // id 153: C.FSW
+  1,  // id 154: C.FSD
 
   // Unconditional Jump Instructions (Table 74)
-  3,  // id 155: C.J
-  3,  // id 156: C.JAL
+  1,  // id 155: C.J
+  1,  // id 156: C.JAL
 
   // Unconditional Control Transfer Instructions (Table 75)
-  3,  // id 157: C.JR
-  3,  // id 158: C.JALR
+  1,  // id 157: C.JR
+  1,  // id 158: C.JALR
 
   // Conditional Control Transfer Instructions (Table 76)
-  3,  // id 159: C.BEQZ
-  3,  // id 160: C.BNEZ
+  1,  // id 159: C.BEQZ
+  1,  // id 160: C.BNEZ
 
   // Integer Constant-Generation Instructions (Table 77)
-  3,  // id 161: C.LI
-  3,  // id 162: C.LUI
+  1,  // id 161: C.LI
+  1,  // id 162: C.LUI
 
   // Integer Register-Immediate Operations (Table 78-82)
-  3,  // id 163: C.ADDI
-  3,  // id 164: C.ADDIW
-  3,  // id 165: C.ADDI16SP
-  3,  // id 166: C.ADDI4SPN
-  3,  // id 167: C.SLLI
-  3,  // id 168: C.SRLI
-  3,  // id 169: C.SRAI
-  3,  // id 170: C.ANDI
+  1,  // id 163: C.ADDI
+  1,  // id 164: C.ADDIW
+  1,  // id 165: C.ADDI16SP
+  1,  // id 166: C.ADDI4SPN
+  1,  // id 167: C.SLLI
+  1,  // id 168: C.SRLI
+  1,  // id 169: C.SRAI
+  1,  // id 170: C.ANDI
 
   // Integer Register-Register Operations (Table 83)
-  3,  // id 171: C.MV
-  3,  // id 172: C.ADD
+  1,  // id 171: C.MV
+  1,  // id 172: C.ADD
 
   // Integer Register-Register Operations (Table 84)
-  3,  // id 173: C.AND
-  3,  // id 174: C.OR
-  3,  // id 175: C.XOR
-  3,  // id 176: C.SUB
-  3,  // id 177: C.ADDW
-  3,  // id 178: C.SUBW
+  1,  // id 173: C.AND
+  1,  // id 174: C.OR
+  1,  // id 175: C.XOR
+  1,  // id 176: C.SUB
+  1,  // id 177: C.ADDW
+  1,  // id 178: C.SUBW
 
   // Count Leading/Trailing Zeroes Instructions (Table 85)
-  3,  // id 179: CLZ
-  3,  // id 180: CTZ
-  3,  // id 181: CLZW
-  3,  // id 182: CTZW
+  1,  // id 179: CLZ
+  1,  // id 180: CTZ
+  1,  // id 181: CLZW
+  1,  // id 182: CTZW
 
   // Count Bits Set Instructions (Table 86)
-  3,  // id 183: CPOP
-  3,  // id 184: CPOPW
+  1,  // id 183: CPOP
+  1,  // id 184: CPOPW
 
   // Logic-With-Negate Instructions (Table 87)
-  3,  // id 185: ANDN
-  3,  // id 186: ORN
-  3,  // id 187: XNOR
+  1,  // id 185: ANDN
+  1,  // id 186: ORN
+  1,  // id 187: XNOR
 
   // Comparison Instructions (Table 88)
-  3,  // id 188: MIN
-  3,  // id 189: MINU
-  3,  // id 190: MAX
-  3,  // id 191: MAXU
+  1,  // id 188: MIN
+  1,  // id 189: MINU
+  1,  // id 190: MAX
+  1,  // id 191: MAXU
 
   // Sign-Extend Instructions (Table 89)
-  3,  // id 192: SEXT.B
-  3,  // id 193: SEXT.H
+  1,  // id 192: SEXT.B
+  1,  // id 193: SEXT.H
 
   // Bit Permutation Instructions (Table 90)
-  3,  // id 194: ROR
-  3,  // id 195: ROL
-  3,  // id 196: RORI
-  3,  // id 197: RORW
-  3,  // id 198: ROLW
-  3,  // id 199: RORIW
+  1,  // id 194: ROR
+  1,  // id 195: ROL
+  1,  // id 196: RORI
+  1,  // id 197: RORW
+  1,  // id 198: ROLW
+  1,  // id 199: RORIW
 
   // Address Calculation Instructions (Table 91)
-  3,  // id 200: SH1ADD
-  3,  // id 201: SH2ADD
-  3,  // id 202: SH3ADD
-  3,  // id 203: SH1ADD.UW
-  3,  // id 204: SH2ADD.UW
-  3,  // id 205: SH3ADD.UW
+  1,  // id 200: SH1ADD
+  1,  // id 201: SH2ADD
+  1,  // id 202: SH3ADD
+  1,  // id 203: SH1ADD.UW
+  1,  // id 204: SH2ADD.UW
+  1,  // id 205: SH3ADD.UW
 
   // Add/Shift with Prefix Zero-Extend Instructions (Table 92)
-  3,  // id 206: ADD.UW
-  3,  // id 207: SLLI.UW
+  1,  // id 206: ADD.UW
+  1,  // id 207: SLLI.UW
 
   // Bit Manipulation Pseudo-instructions (Table 93)
-  3,  // id 208: ZEXT.H
-  3,  // id 209: REV8
-  3,  // id 210: ORC.B
+  1,  // id 208: ZEXT.H
+  1,  // id 209: REV8
+  1,  // id 210: ORC.B
 
   // Control and Status Register Instructions (Table 94)
-  3,  // id 211: CSRRW
-  3,  // id 212: CSRRS
-  3,  // id 213: CSRRC
-  3,  // id 214: CSRRWI
-  3,  // id 215: CSRRSI
-  3,  // id 216: CSRRCI
+  1,  // id 211: CSRRW
+  1,  // id 212: CSRRS
+  1,  // id 213: CSRRC
+  1,  // id 214: CSRRWI
+  1,  // id 215: CSRRSI
+  1,  // id 216: CSRRCI
 
   // Timer and Counter Pseudo-instructions (Table 102)
-  3,  // id 217: RDCYCLE
-  3,  // id 218: RDTIME
-  3,  // id 219: RDINSTRET
+  1,  // id 217: RDCYCLE
+  1,  // id 218: RDTIME
+  1,  // id 219: RDINSTRET
 };
 
 int get_inst_cost(int inst_id, Arc_type arc) {
