@@ -18,7 +18,8 @@ int *prioritizer(int *nodes, int n, int **edges, int m);
     * A node contains its instruction ID, e.g., ID = 1 for ADD
   * `edges`: 2-D array with size of `m` x 2
     * An edge is pair of {src_idx, dest_idx}
-    * 0 <= src_idx, dest_idx < `n`
+    * 1 <= src_idx, dest_idx <= `n`
+      * Assuming Coq-based list indexing that starts from `1`
 * Return
   * `priority`: 1-D array with size of `n`
 
@@ -50,9 +51,7 @@ Note that: The array indexing is to start from `1` (instead of `0` for C standar
 And the return value `priority` is shown below (when CP method is used).
 
 ```
-  priority[0] = 14;
-  priority[1] = 40;
-  priority[2] = 7;
+  priority == {14, 40, 7};
 ```
 
 ## Instruction IDs and costs
