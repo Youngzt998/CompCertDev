@@ -40,9 +40,11 @@ two dependence edges.
 
 The corresponding `nodes` and `edges` are shown below.
 
+Note that: The array indexing is to start from `1` (instead of `0` for C standard array) according to the indexing in the overall scheduler implementations in Coq.
+
 ```
   nodes[3] = {104 /* FADD.D */, 107 /* FDIV.D */, 105 /* FSUB.D */};
-  edges[2] = {{0,2}, {1,2}};
+  edges[2] = {{1,3}, {2,3}};
 ```
 
 And the return value `priority` is shown below (when CP method is used).
@@ -61,11 +63,11 @@ the instruction cost table `cost_table_u74riscv`.
 ```
 #define NUM_INSTS_U74RISCV 220
 static int cost_table_u74riscv[NUM_INSTS_U74RISCV] = {
-  3,  // id 0: default (wild card)
+  1,  // id 0: default (wild card)
 
   // R-Type Integer Instructions (Table 36)
-  3,  // id 1: ADD
-  3,  // id 2: SUB
+  1,  // id 1: ADD
+  1,  // id 2: SUB
   ...
 
   // Double-Precision FP Computational Instructions (Table 63, latency from Table 178)
