@@ -19,7 +19,7 @@ int *prioritizer(int *nodes, int n, int **edges, int m);
   * `edges`: 2-D array with size of `m` x 2
     * An edge is pair of {src_idx, dest_idx}
     * 1 <= src_idx, dest_idx <= `n`
-      * Assuming Coq-based list indexing that starts from `1`
+      * Assuming Coq-based list indexing that starts from 1
 * Return
   * `priority`: 1-D array with size of `n`
 
@@ -41,7 +41,7 @@ two dependence edges.
 
 The corresponding `nodes` and `edges` are shown below.
 
-Note that: The array indexing is to start from `1` (instead of `0` for C standard array) according to the indexing in the overall scheduler implementations in Coq.
+Note that: The array indexing is to start from 1 (instead of 0 for C standard array) according to the indexing in the overall scheduler implementations in Coq.
 
 ```
   nodes[3] = {104 /* FADD.D */, 107 /* FDIV.D */, 105 /* FSUB.D */};
