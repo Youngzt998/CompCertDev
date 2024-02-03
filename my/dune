@@ -1,5 +1,5 @@
 (library
- (name main)
+ (name prioritizer)
  (foreign_archives foo)
  ; ctypes backward compatibility shims warn sometimes; suppress them
  (flags
