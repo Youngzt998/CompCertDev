@@ -8,8 +8,6 @@ module Types = Types_generated
 module Functions (F : Ctypes.FOREIGN) = struct
   open F
 
-  let int_id = foreign "int_id" (int @-> returning int)
-
   let prioritizer =
     foreign
       "prioritizer"
