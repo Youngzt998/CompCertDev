@@ -1,3 +1,0 @@
-module Types (F : ClangTypes.TYPE) = struct
-  (* Define any C library types and constants *)
-end
