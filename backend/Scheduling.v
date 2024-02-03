@@ -1,3 +1,5 @@
-Parameter prioritize : list nat -> nat -> list nat -> nat -> unit.
+Require Import ExtrOcamlIntConv.
 
-Definition schedule := prioritize.
+Parameter prioritizer : list int -> int -> list (list int) -> int -> unit.
+
+Definition schedule := prioritizer.

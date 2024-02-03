@@ -37,9 +37,11 @@ Require Parser.
 Require Initializers.
 Require Scheduling.
 
+
 (* Standard lib *)
 Require Import ExtrOcamlBasic.
 Require Import ExtrOcamlString.
+Require Import ExtrOcamlIntConv.
 
 (* Coqlib *)
 Extract Inlined Constant Coqlib.proj_sumbool => "(fun x -> x)".
@@ -148,7 +150,7 @@ Extraction Blacklist List String Int.
 (* Needed in Coq 8.4 to avoid problems with Function definitions. *)
 Set Extraction AccessOpaque.
 
-Extract Constant Scheduling.prioritize => "Prioritizer.prioritize".
+Extract Constant Scheduling.prioritizer => "Prioritizer.prioritizer".
 
 (* Go! *)
 

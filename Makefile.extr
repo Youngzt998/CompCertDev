@@ -112,10 +112,15 @@ ifeq ($(wildcard .depend.extr),.depend.extr)
 CCOMP_OBJS:=$(shell $(MODORDER) driver/Driver.cmx)
 
 ifeq ($(OCAML_NATIVE_COMP),true)
-ccomp: $(CCOMP_OBJS)
-	@echo "Linking $@"
+
+.PHONY: dune_ext
+
+dune_ext:
 	dune build my
-	@$(OCAMLOPT) -o $@ $(LIBS) $(LINK_OPT) $+
+
+ccomp: dune_ext $(CCOMP_OBJS)
+	@echo "Linking $@"
+	@$(OCAMLOPT) -o $@ $(LIBS) $(LINK_OPT) $(CCOMP_OBJS)
 else
 ccomp: ccomp.byte
 	@echo "Copying to $@"
@@ -166,6 +171,7 @@ clean:
 	rm -f $(GENERATED)
 	for d in $(DIRS); do rm -f $$d/*.cm[iotx] $$d/*cmti $$d/*.o; done
 	$(MAKE) -C cparser clean
+	dune clean
 
 # Generation of .depend.extr
 
