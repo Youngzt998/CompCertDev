@@ -17,7 +17,7 @@
 # Emacs saves
 *~
 # Executables and configuration
-/ccomp
+#/ccomp
 /ccomp.byte
 /ccomp.prof
 /clightgen
