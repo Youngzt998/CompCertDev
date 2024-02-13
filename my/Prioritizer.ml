@@ -1,6 +1,6 @@
 open Ctypes
 
-let prioritizer nodes n edges m =
+let prioritizer nodes n edges m: int list =
   (* Calling the prioritizer function *)
 
   (* First, we will need to convert them to C arrays *)
@@ -20,5 +20,6 @@ let prioritizer nodes n edges m =
     C.Functions.prioritizer (CArray.start nodes_arr) n (CArray.start edges_arr)
       m
   in
+  let _ = CArray.from_ptr result n |> CArray.to_list |> List.iteri (fun i x -> Format.printf "priority[%d] = %d\n" i x) in
   CArray.from_ptr result n |> CArray.to_list
-  |> List.iteri (fun i x -> Format.printf "priority[%d] = %d\n" i x)
+  (* |> List.iteri (fun i x -> Format.printf "priority[%d] = %d\n" i x) *)
