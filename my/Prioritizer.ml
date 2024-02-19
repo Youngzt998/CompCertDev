@@ -20,6 +20,8 @@ let prioritizer nodes n edges m: int list =
     C.Functions.prioritizer (CArray.start nodes_arr) n (CArray.start edges_arr)
       m
   in
+  let _ = nodes |> List.iteri (fun i x -> Format.printf "nodes[%d] = %d\n" i x) in
+  let _ = edges |> List.iteri (fun i e -> e |> List.iteri (fun j x -> Format.printf "edges[%d][%d] = %d\n" i j x )  ) in
   let _ = CArray.from_ptr result n |> CArray.to_list |> List.iteri (fun i x -> Format.printf "priority[%d] = %d\n" i x) in
   CArray.from_ptr result n |> CArray.to_list
   (* |> List.iteri (fun i x -> Format.printf "priority[%d] = %d\n" i x) *)
