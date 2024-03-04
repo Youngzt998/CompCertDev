@@ -2961,24 +2961,125 @@ Section ABSTRACT_LIST_SCHEDULER.
 End ABSTRACT_LIST_SCHEDULER.
 
 
-
-
-
-
-
-
-
-
 Check list_schedule'.
 
+
+
+
+
+
+
 Require Import ExtrOcamlIntConv.
+
+(* scheduling heuristics from outside world *)
 Parameter prioritizer : list int -> int -> list (list int) -> int -> (list int).
-
-Locate instruction.
-
-(* TODO : define a convert table *)
+Locate FR.
+(* Encode different type of instructions into integers to pass to outside heuristics  *)
 Definition inst2id (i: instruction): N := 
   match i with
+  | Lop op args res => 
+      match op, args with
+      | Omove, a1 :: nil =>
+          match Asm.preg_of res, Asm.preg_of a1 with
+          | Asm.IR r, Asm.IR a => 171                 (* C.MV *)    (* TODO: conform this*)
+          | Asm.FR r, Asm.FR a => 129                 (* FMV.D.X *) (* TODO: conform this*)
+          |  _  ,  _   => 0
+          end
+      | Omul, a1 :: a2 :: nil => 36           (* MUL *)
+      | Omulhs, a1 :: a2 :: nil => 36
+      | Omulhu, a1 :: a2 :: nil => 36
+      | Oaddfs, a1 :: a2 :: nil => 74         (* FADD.S *)
+      | Osubfs, a1 :: a2 :: nil => 75         (* FSUB.S *)
+      | Omulfs, a1 :: a2 :: nil => 76         (* FMUL.S *)
+      | Odivfs, a1 :: a2 :: nil => 77         (* FDIV.S *)
+      | Oaddf, a1 :: a2 :: nil  => 104        (* FADD.D *)
+      | Osubf, a1 :: a2 :: nil => 105         (* FSUB.D *)
+      | Omulf, a1 :: a2 :: nil => 106         (* FMUL.D *)
+      | Odivf, a1 :: a2 :: nil => 107         (* FDIV.D *)
+      | Onegfs, a1 :: nil => 94               (* FSGNJN.S *)
+      | Onegf, a1 :: nil  => 126              (* FSGNJN.D *)
+
+      (* Table 55 *)
+      | Ointofsingle, a1 :: nil => 85         (* FCVT.W.S *)
+      | Osingleofint, a1 :: nil => 86         (* FCVT.S.W *)
+      | Ointuofsingle, a1 :: nil => 87        (* FCVT.WU.S *)
+      | Osingleofintu, a1 :: nil => 88        (* FCVT.S.WU *)
+
+      (* Table 64 *)
+      | Ointoffloat, a1 :: nil => 115         (* FCVT.W.D *)
+      | Ofloatofint, a1 :: nil => 116         (* FCVT.D.W *)
+      | Ointuoffloat, a1 :: nil => 117        (* FCVT.WU.D *)
+      | Ofloatofintu, a1 :: nil => 118        (* FCVT.D.WU *)
+
+      | Ocmp cond, _ =>
+        match cond, args with
+        (* dounble float *)
+        | Ccompf c, f1 :: f2 :: nil =>
+            match c with
+            | Ceq => 130                      (* FEQ.D *)
+            | Cne => 0
+            | Clt => 131                      (* FLT.D *)
+            | Cle => 132                      (* FLE.D *)
+            | Cgt => 0
+            | Cge => 0
+            end
+        | Cnotcompf c, f1 :: f2 :: nil =>
+            match c with
+            | Ceq => 130                      (* FEQ.D *)
+            | Cne => 0
+            | Clt => 131                      (* FLT.D *)
+            | Cle => 132                      (* FLE.D *)
+            | Cgt => 0
+            | Cge => 0
+            end
+        (* single float *)
+        | Ccompfs c, f1 :: f2 :: nil =>
+            match c with
+            | Ceq => 98                       (* FEQ.S *)
+            | Cne => 0
+            | Clt => 99                       (* FLT.S *)
+            | Cle => 100                      (* FLE.S *)
+            | Cgt => 0
+            | Cge => 0
+            end
+        | Cnotcompfs c, f1 :: f2 :: nil =>
+            match c with
+            | Ceq => 98                       (* FEQ.S *)
+            | Cne => 0
+            | Clt => 99                       (* FLT.S *)
+            | Cle => 100                      (* FLE.S *)
+            | Cgt => 0
+            | Cge => 0
+            end
+        | _, _ => 0
+        end
+
+      | _, _ => 0
+      end
+  | Lload chunk addr args dst => 
+      match chunk with
+      | Mint8signed => 20                     (* LB *)
+      | Mint8unsigned => 23                   (* LBU *)
+      | Mint16signed => 21                    (* LH *)
+      | Mint16unsigned => 24                  (* LHU *)
+      | Mint32 => 22                          (* LW *)
+      | Mint64 => 146                         (* C.LD *)
+      | Mfloat32 => 72                        (* FLW *)
+      | Mfloat64 => 102                       (* FLD *)
+      | _ => 0
+      end
+  | Lstore chunk addr args src => 
+      match chunk with
+      | Mint8signed =>  25                    (* SB *)
+      | Mint8unsigned => 25                   (* SB *)
+      | Mint16signed => 26                    (* SH *)
+      | Mint16unsigned => 26                  (* SH *)
+      | Mint32 =>  27                         (* SW *)
+      | Mint64 => 151                         (* C.SD *)
+      | Mfloat32 => 73                        (* FSW *)
+      | Mfloat64 => 103                       (* FSD *)
+      | _ => 0
+      end
   | _ => 0
   end.
 
