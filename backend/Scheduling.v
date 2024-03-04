@@ -2505,23 +2505,35 @@ Section ABSTRACT_LIST_SCHEDULER.
 
   Variable prioritizer: list instruction -> list positive.
 
-  (* Fixpoint prior_map (pos: positive) (l: list instruction) :=
-    match prioritizer l with
-    | nil =>
-    |  *)
-
-  Check prioritizer.
-
-  (* Temporary *)
-  Definition firstpick (l: list (positive * instruction)) :=
-    match l with
-    | nil => Error (msg "Unexpected Error: Empty available inst to be scheduled")
-    | pi :: l' => OK pi
+  Fixpoint prio_map' (cur: positive) (lp: list positive): PMap.t positive :=
+    match lp with
+    | nil => PMap.init 1
+    | p :: lp' => PMap.set cur p (prio_map' (cur + 1) lp')
     end.
 
+  Definition prio_map (lp: list positive) := prio_map' 1 lp.
+
+
+  Check prioritizer. Check 1<?2. Locate Z. 
+
+  (* pick the one with max priority *)
+  Fixpoint firstpick' (max: (positive * instruction) * positive)  (* (id, inst, prio_value) *)
+      (PM: PMap.t positive) (nl: list (positive * instruction)): positive * instruction :=
+    match nl with
+    | nil => fst max
+    | (p, i) :: nl' => if (snd max) <? (PMap.get p PM)
+                  then firstpick' ((p, i), PMap.get p PM) PM nl'
+                  else firstpick' max PM nl'
+    end.
+
+  Definition firstpick (PM: PMap.t positive) (nl: list (positive * instruction)): res (positive*instruction) :=
+    match nl with
+    | nil => Error (msg "Unexpected Error: Empty available inst to be scheduled")
+    | (p, i) :: nl' => OK (firstpick' ((p, i), PMap.get p PM) PM nl')
+    end.
   
 
-  Lemma firstpick_sound: forall nl pi, firstpick nl = OK pi -> In pi nl.
+  Lemma firstpick_sound: forall PM nl pi, firstpick PM nl = OK pi -> In pi nl.
   Proof. Admitted.
 
   (* Definition firstpick (l1 l2 l3: numbblock) :=  *)
@@ -2731,14 +2743,14 @@ Section ABSTRACT_LIST_SCHEDULER.
     (fst m, PTree.map1 (remove_node0 p) (PTree.remove p (snd m))).
 
   (* return the one to schedule and the new dependence relation after removing it *)
-  Definition schedule_1 (prior: list positive) (original: DPMap_t)
+  Definition schedule_1 (prior: PMap.t positive) (original: DPMap_t)
     (scheduled: list (positive * instruction)) (remain: DPMap_t)
      : res (list (positive * instruction) * DPMap_t) :=
   let available := indep_nodes remain in
-    do pi <- firstpick available;
+    do pi <- firstpick prior available;
     OK (scheduled ++ [pi], remove_node (fst pi) remain).
    
-  Fixpoint schedule_n (prior: list positive) (L: nat) (original: DPMap_t)
+  Fixpoint schedule_n (prior: PMap.t positive) (L: nat) (original: DPMap_t)
     (scheduled: list (positive * instruction)) (remain: DPMap_t)
       : res (list (positive * instruction) * DPMap_t) :=
     match L with
@@ -2750,7 +2762,7 @@ Section ABSTRACT_LIST_SCHEDULER.
   
   Definition schedule_numblock (nl: list (positive * instruction)) :=
   let m := dep_map_gen nl in
-  let prior := prioritizer (numlistoff nl) in
+  let prior := prio_map (prioritizer (numlistoff nl)) in
     do (nl', m) <- schedule_n prior (List.length nl) m [] m;
     OK nl'.
 
@@ -2965,10 +2977,13 @@ Parameter prioritizer : list int -> int -> list (list int) -> int -> (list int).
 Locate instruction.
 
 (* TODO : define a convert table *)
-Definition inst2id (i: instruction): positive := 1.
+Definition inst2id (i: instruction): N := 
+  match i with
+  | _ => 0
+  end.
 
 Definition block2ids (l: list instruction): list int :=
-  List.map (compose int_of_pos inst2id) l.
+  List.map (compose int_of_n inst2id) l.
 
 Fixpoint inst2edges (pi: positive * instruction) 
   (nl: list (positive * instruction)): list (list int) :=
