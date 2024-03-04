@@ -430,7 +430,7 @@ int verify_edges(int **edges, int m, int n) {
     for (int j = 0; j < 2; j++) {
       int id = edges[i][j];
       if (id < 0 || id >= n)
-	      return 0;
+	return 0;
     }
   }
   return 1;
@@ -709,8 +709,18 @@ int *prioritizer_impl(int *nodes, int n, int **edges, int m, int alg_type_id, in
 }
 
 int *prioritizer(int *nodes, int n, int **edges, int m) {
+  // Specifications of algorithm and architecture
   int alg_type_id = 0;  // ALG_CP
   int arc_type_id = 0;  // ARC_U74RISCV
-  int *priority = prioritizer_impl(nodes, n, edges, m, alg_type_id, arc_type_id);
+
+  // Coq-to-C indexing conversion: Shift Coq-based array whose index starts from 1.
+  int **edges2 = (int **) calloc(m, sizeof(int *));
+  for (int i = 0; i < m; i++) {
+    edges2[i] = (int *) calloc(2, sizeof(int));
+    edges2[i][0] = edges[i][0] - 1;
+    edges2[i][1] = edges[i][1] - 1;
+  }
+
+  int *priority = prioritizer_impl(nodes, n, edges2, m, alg_type_id, arc_type_id);
   return priority;
 }
