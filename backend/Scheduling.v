@@ -3,6 +3,7 @@ Parameter prioritizer : list int -> int -> list (list int) -> int -> unit. *)
 
 
 Require Import Globalenvs Events Smallstep.
+(** TODO: already proved in originao compcert, replace it*)
 Section SMALL_STEP_EXT.
   Variable L: Smallstep.semantics.
 
@@ -24,7 +25,7 @@ Open Scope nat_scope.
 
 Require Import List Lia.
 
-Section LIST_INDUCTION.  
+(* Section LIST_INDUCTION.  
   Variable A : Type.
   Variable P : list A -> Prop.
   Hypothesis H : forall xs, (forall l, length l < length xs -> P l) -> P xs.
@@ -37,10 +38,24 @@ Section LIST_INDUCTION.
       - apply IHxs. simpl in Hlen. lia. }
     intros xs. apply H_ind with (xs := xs). lia.
   Qed.
-End LIST_INDUCTION.
+End LIST_INDUCTION. *)
+
+(** exists in standard lib *)
+(* Section LIST_REV_INDUCTION.  
+  Variable A : Type.
+  Variable P : list A -> Prop.
+  Hypothesis BASE: P nil.
+  Hypothesis IND: forall l a, P l -> P (l ++ [a]).
+
+  Theorem list_ind_rev: forall l, P l.
+  Proof.
+    induction l; eauto.
 
 
-(** TODO: move to TopoSort files *)
+End LIST_REV_INDUCTION. *)
+
+
+(** TODO: move to separate file *)
 Open Scope nat_scope.
 Require Import Relations.Relation_Definitions.
 Section TRY_SWAP.
@@ -515,7 +530,7 @@ End TOPO_REORDER.
 
 
 Open Scope positive_scope.
-Require Import Lia.
+Require Import List Lia.
 
 Section LIST_TOPO.
 
@@ -696,7 +711,10 @@ End LIST_TOPO.
 Section SWAPPING_PROPERTY.
   Context {A: Type}.
   Variable Rb: A -> A -> bool.
-  Hypothesis SymmetricR: forall x y, Rb x y = Rb y x.
+
+  (* TODO should be unecessary hypothesis, 
+    but its fine to have it since dependence relation is symmetric between 2 instructions *)
+  Hypothesis SymmetricR: forall x y, Rb x y = Rb y x. 
 
   Let Rbnum (na1 na2: positive * A) := Rb (snd na1) (snd na2).
   Let R := fun x y => Rb x y = true.
@@ -2305,7 +2323,7 @@ Section ABSTRACT_SCHEDULER.
   Let HBR := fun i1 i2 => happens_before i1 i2 = true.
   Let HBnum (na1 na2: positive * instruction) := happens_before (snd na1) (snd na2).
   Let HBGenR (l: list instruction) := GenR HBR l.
-
+    
   Hypothesis schedule_valid:
     forall l nl', schedule' (numlistgen l) = OK nl' -> 
       treorder HBR l (numlistgen l) nl'.
@@ -2606,42 +2624,79 @@ Section ABSTRACT_LIST_SCHEDULER.
         dec_numlist (pi::nl)
   .
 
-  Lemma dep_map_sound_prepare1:
-    forall nl pi1 pi2 i ps, dec_numlist nl -> In pi1 nl -> In pi2 nl -> 
+  Lemma dep_map_sound_prepare:
+  forall nl pi1 pi2 i ps, dec_numlist nl -> In pi1 nl -> In pi2 nl -> 
+  let M := dep_map nl in
+    PMap.get (fst pi1) M = Some (i, ps) -> (* pi1 depends on pi2 *)
+      PS.mem (fst pi2) ps = true ->
+        (fst pi2) < (fst pi1) /\ HBR (snd pi2) (snd pi1).
+    (* forall nl pi1 pi2 i ps, dec_numlist nl -> In pi1 nl -> In pi2 nl -> 
     let M := dep_map nl in
       PMap.get (fst pi1) M = Some (i, ps) ->
         PS.mem (fst pi2) ps = true ->
-          (fst pi2) < (fst pi1).
+          (fst pi2) < (fst pi1). *)
   Proof.
     induction nl.
-    - intros. admit.
-    - intros. simpl in M. destruct a as [p i'].
-    
+    (* nil *)
+    - intros. simpl in H0. destruct H0.
+    (* l ++ [x] *)
+    - intros. 
+      simpl. simpl in H0, H1.
+      destruct H0, H1.
+      { subst.  (* should be exfalso *)
+        admit.
+      }
+      { subst. admit.
 
+      }
+      { subst.  (* should be exfalso *)
+        admit.
+
+      }
+      { unfold M in H2. simpl in H2. admit.
+
+      }
+      
+  
   Admitted.
 
+  (* Lemma dep_map_sound':
+    let P := 
+      fun l =>     
+      forall k pi1 pi2 i ps, In pi1 (numlistgen' l k) -> In pi2 (numlistgen' l k) -> 
+      let M := dep_map (List.rev (numlistgen' l k)) in
+        PMap.get (fst pi1) M = Some (i, ps) ->
+          PS.mem (fst pi2) ps = true ->
+            GenR' HBR l k pi2 pi1
+    in
+    forall l, P l.
+  Proof.
+    apply rev_ind.
+    - intros. simpl in H. destruct H.
+    - intros. 
+  Abort. *)
 
-  Lemma dep_map_sound:
+
+  Lemma dep_map_sound':
     forall l k pi1 pi2 i ps, In pi1 (numlistgen' l k) -> In pi2 (numlistgen' l k) -> 
     let M := dep_map (List.rev (numlistgen' l k)) in
       PMap.get (fst pi1) M = Some (i, ps) ->
         PS.mem (fst pi2) ps = true ->
           GenR' HBR l k pi2 pi1.
   Proof.
-    (* induction l.
-    - admit.
-    - *)
-    intros. destruct pi1 as [p1 i1]; simpl in H1.
-    destruct pi2 as [p2 i2]; simpl in H2.
+    intros. assert(fst pi2 < fst pi1 /\ HBR (snd pi2) (snd pi1)).
+    eapply dep_map_sound_prepare. 4: { eauto. }
+    admit.  (* fine *)
+    rewrite <- in_rev; auto. rewrite <- in_rev; auto. eauto. destruct H3.
     eapply GenR_intro; eauto; simpl.
-    -
-    admit.
-
-    - unfold HBR.
-
+    (* - eapply (proj1 dep_map_sound_prepare1). 4: { eauto. } 
+      admit.  (* fine *)
+      rewrite <- in_rev; auto. rewrite <- in_rev; auto.
+      eauto.
+    - unfold HBR. *)
   Admitted.
 
-  Lemma dep_map_complete:
+  (* Lemma dep_map_complete:
   forall l k pi1 pi2,
   let M := dep_map (List.rev (numlistgen' l k)) in
     GenR' HBR l k pi1 pi2 ->
@@ -2654,7 +2709,7 @@ Section ABSTRACT_LIST_SCHEDULER.
     intros. inv H. destruct pi1 as [p1 i1]; simpl in H2, H3.
     destruct pi2 as [p2 i2]; simpl in H2, H3. simpl.
 
-  Admitted.
+  Admitted. *)
 
   (* Lemma dep_GenRb'_sound:
     forall l k pi1 pi2, In pi1 (numlistgen' l k) -> In pi2 (numlistgen' l k) -> 
@@ -2771,12 +2826,27 @@ Section ABSTRACT_LIST_SCHEDULER.
 
 
 
-  Lemma remove_node_submap: 
+  (* Lemma remove_node_submap: 
   forall m p1 p2 i2 ps2, (remove_node p1 m) !! p2 = Some (i2, ps2) ->
     m !! p2 = Some (i2, ps2).
   Proof.
     intros. unfold remove_node in H.
+  Admitted. *)
+
+
+  Lemma indep_nodes_inv': forall t o pi j,  In pi (indep_nodes' t j []) ->
+    exists ps : PS.t, (o, PTree.Nodes t) !! (fst pi) = Some (snd pi, ps).
+  Proof.
+    induction t.
+    - intros.
   Admitted.
+
+  Lemma indep_nodes_inv: forall pi M, In pi (indep_nodes M) ->
+    exists ps, M !! (fst pi) = Some (snd pi, ps).
+  Proof. 
+    intros. unfold indep_nodes in H. destruct M. simpl in H. destruct t. destruct H.
+    eapply indep_nodes_inv'. eauto.
+  Qed.
 
 
   Inductive schedule_invariant
@@ -2787,16 +2857,17 @@ Section ABSTRACT_LIST_SCHEDULER.
     : Prop := 
     | sched_inv_intro
       (L2MAP: original = dep_map_gen (numlistgen l))
-      (EXCLUSIVE1: forall p i, List.In (p, i) scheduled -> PMap.get p remain = None)
-      (EXCLUSIVE2: forall p i ps, PMap.get p remain = Some (i, ps) -> ~ List.In (p, i) scheduled)
-      (SUBMAP: forall p i ps, PMap.get p remain = Some (i, ps) ->
-        exists ps', PMap.get p original = Some (i, ps') /\ True ) (* TODO: subset relation *)
-      (SUBLIST: forall p i, List.In (p, i) scheduled -> exists ps, PMap.get p original = Some (i, ps) )
-      (INCL: forall p i ps, PMap.get p original = Some (i, ps) -> 
-                PMap.get p remain = Some (i, ps) \/ List.In (p, i) scheduled)
+      (EXCLUSIVE1: forall pi, List.In pi scheduled -> PMap.get (fst pi) remain = None)
+      (EXCLUSIVE2: forall pi ps, PMap.get (fst pi) remain = Some (snd pi, ps) -> ~ List.In pi scheduled)
+      (SUBMAP: forall p i ps, PMap.get p remain = Some (i, ps) -> In (p, i) (numlistgen l) ) (* TODO: subset relation *)
+        
+      (* (SUBLIST: forall pi i, List.In pi scheduled -> exists ps, PMap.get (fst pi) original = Some (i, ps) ) *)
+      (SUBLIST: incl scheduled (numlistgen l) )
+      (* (INCL: forall p i ps, PMap.get p original = Some (i, ps) -> 
+                PMap.get p remain = Some (i, ps) \/ List.In (p, i) scheduled) *)
       (NODUP: NoDup scheduled)
-      (SORT': forall p1 i1 p2 i2 ps2, In (p1, i1) scheduled -> remain !! p2 = Some (i2, ps2) ->
-                 ~ GenR HBR l (p2, i2) (p1, i1) )
+      (SORT': forall pi1 pi2 ps2 i, In pi1 scheduled -> remain !! (fst pi2) = Some (i, ps2) ->
+                 ~ GenR HBR l pi2 pi1)
       (SORT: tsorted HBR l scheduled) 
       (* (SORT: forall p1 i1 p2 i2 ps2, List.In (p1, i1) scheduled ->  PMap.get p2 remain = Some (i2, ps2) ->
                True )  *)
@@ -2813,13 +2884,14 @@ Section ABSTRACT_LIST_SCHEDULER.
     - auto.
     - intros. destruct H.
     - intros. intro. destruct H0.
-    - intros. exists ps. auto. (* TODO *)
-    - intros. destruct H.
-    - intros; auto.
+    - intros. admit. (* TODO *)
+    
+    - intro; intros. destruct H.
+    (* - intros; auto. *)
     - intros; auto. eapply NoDup_nil.
     - intros. destruct H.
     - eapply topo_sorted_nil.
-  Qed.
+  Admitted.
 
   Lemma schedule_1_invariant_preserve:
     forall prior l original scheduled remain scheduled' remain',
@@ -2832,46 +2904,63 @@ Section ABSTRACT_LIST_SCHEDULER.
     (* EXCLUSIVE1 *)
     - monadInv H. intros.
       eapply in_app_or in H; destruct H.
-      eapply EXCLUSIVE1 in H. admit. (* fine *)
-      destruct H. subst. simpl. admit. (* fine *)
-      destruct H.
+      eapply EXCLUSIVE1 in H. admit. (* pretty fine *)
+      inv H. simpl. admit. (* fine, need property about remove_node *)
+      destruct H0.
     (* EXCLUSIVE2 *)
-    - monadInv H.  intros.
-
+    - monadInv H.  intros. intro.
+      eapply in_app_or in H0; destruct H0.
+      eapply EXCLUSIVE1 in H0. (* fine, need property about remove_node *)
       admit.
+      inv H0. simpl in H. admit. (* fine, need property about remove_node *)
+      destruct H1.
     
     (* SUBMAP *)
-    - admit.
+    - intros. monadInv H. eapply SUBMAP.
+      admit. (* fine *)
 
     (* SUBLIST *)
-    - intros. monadInv H. eapply in_app_or in H0. destruct H0; auto.
-      simpl in H. destruct H. subst. 
-      assert(exists ps, remain !! p = Some (i, ps)).
-      { admit. } destruct H.
-      eapply SUBMAP in H. destruct H. destruct H. exists x0; auto.
-      destruct H.
+    - intros. monadInv H. intro; intros. eapply in_app_or in H.
+      destruct H. eapply SUBLIST; eauto.
+      inv H. 2:{ destruct H0. }
+      eapply firstpick_sound in EQ.
+      admit. (* fine, need property about indep_nodes  *)
     
+    (* eapply in_app_or in H0. destruct H0; auto.
+      simpl in H. destruct H. subst. 
+      assert(exists ps, remain !! (fst pi) = Some (i, ps)).
+      { admit. } destruct H.
+      (* eapply SUBMAP in H. destruct H. destruct H. exists x0; auto.
+      destruct H. *)
+      admit. admit. *)
+(*     
     (* INCL *)
     - admit. (* TODO maybe useless*)
 
+
+     *)
+
     (* NODUP *)
-    - monadInv H. destruct x as [p i].
+    - monadInv H.
       assert(NoDup_swap: forall (A: Type) (l1 l2: list A), NoDup (l1 ++ l2) -> NoDup (l2++l1)).
       { admit. }
       eapply NoDup_swap. eapply NoDup_cons; auto.
-      eapply firstpick_sound in EQ.
-      admit. (* fine? *)
+      destruct x. eapply EXCLUSIVE2. eapply firstpick_sound in EQ.
+      admit. (* fine, need more property about indep_nodes *)
     
     (* SORT' *)
-    - intros. monadInv H. eapply in_app_or in H0. destruct H0.
-      { eapply SORT'; auto. admit. (* pretty fine! *) }
-      { simpl in H. destruct H. 2: { destruct H. } subst. simpl in H1.
-        eapply firstpick_sound in EQ. admit.   }
+    - intros. monadInv H. eapply in_app_or in H0. destruct H0. (* need invariant nondup *)
+      { eapply SORT'; auto. admit. (* pretty fine!, need invariant EXCLUSIVE *) }
+      { simpl in H. destruct H. 2: { destruct H. } subst.
+        eapply firstpick_sound in EQ. eapply SORT'. (* fine, but need property of indep_nodes *) 
+        admit.   }
 
     (* SORT *)
-    - monadInv H. eapply topo_soerted_app; eauto. intros. destruct a as [p i].
-      
-    admit.
+    - monadInv H. eapply topo_soerted_app; eauto. intros.
+      destruct x, a.
+      eapply SORT'; eauto.
+      admit. (* fine but need more lemmas on indep_nodes *)
+
   Admitted.
 
   Lemma schedule_n_invariant_preserve:
@@ -2930,15 +3019,17 @@ Section ABSTRACT_LIST_SCHEDULER.
     eapply sorted_same_elements_topo_reorder.
     - set(nl := numlistgen l).
       eapply SameLength_NoDupSame; eauto.
-      { eapply schedule_original_length in EQ; auto. admit. }
+      { eapply schedule_original_length in EQ; auto.
+        rewrite EQ. symmetry. eapply numlistgen_length. }
       { eapply numlistgen_NoDup. }
       { inv INV; eapply NODUP. }
-      { inv INV. intro; intros. destruct a as [p i].
-        eapply SUBLIST in H as ?. destruct H0. eapply dep_map_gen_included; eauto. }
+      { inv INV; eauto.
+       (* intro; intros. destruct a as [p i].
+        eapply SUBLIST in H as ?. destruct H0. eapply dep_map_gen_included; eauto.  *)
+        }
     - eapply tsorted_self.
-    -
-
-  Admitted.
+    - inv INV. eauto.
+  Qed.
 
   Theorem abstract_list_schedule_forward_simulation:
     forall prog tprog, list_schedule' prog = OK tprog -> 
@@ -2974,7 +3065,7 @@ Require Import ExtrOcamlIntConv.
 (* scheduling heuristics from outside world *)
 Parameter prioritizer : list int -> int -> list (list int) -> int -> (list int).
 Locate FR.
-(* Encode different type of instructions into integers to pass to outside heuristics  *)
+(* Encode different type of instructions (Risc-V) into integers to pass to outside heuristics  *)
 Definition inst2id (i: instruction): N := 
   match i with
   | Lop op args res => 
