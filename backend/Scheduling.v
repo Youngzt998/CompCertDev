@@ -2591,11 +2591,11 @@ Section ABSTRACT_LIST_SCHEDULER.
     dep_map (List.rev nl).
 
 
-  Lemma dep_map_gen_included:
+  (* Lemma dep_map_gen_included:
    forall l p i ps, (dep_map_gen (numlistgen l)) !! p = Some (i, ps) -> In (p, i) (numlistgen l).
   Proof.
 
-  Admitted.
+  Admitted. *)
 
   Locate positive. Print positive. Locate Pos.of_nat.
 
@@ -2624,7 +2624,7 @@ Section ABSTRACT_LIST_SCHEDULER.
         dec_numlist (pi::nl)
   .
 
-  Lemma dep_map_sound_prepare:
+  (* Lemma dep_map_sound_prepare:
   forall nl pi1 pi2 i ps, dec_numlist nl -> In pi1 nl -> In pi2 nl -> 
   let M := dep_map nl in
     PMap.get (fst pi1) M = Some (i, ps) -> (* pi1 depends on pi2 *)
@@ -2658,7 +2658,7 @@ Section ABSTRACT_LIST_SCHEDULER.
       }
       
   
-  Admitted.
+  Admitted. *)
 
   (* Lemma dep_map_sound':
     let P := 
@@ -2677,7 +2677,7 @@ Section ABSTRACT_LIST_SCHEDULER.
   Abort. *)
 
 
-  Lemma dep_map_sound':
+  (* Lemma dep_map_sound':
     forall l k pi1 pi2 i ps, In pi1 (numlistgen' l k) -> In pi2 (numlistgen' l k) -> 
     let M := dep_map (List.rev (numlistgen' l k)) in
       PMap.get (fst pi1) M = Some (i, ps) ->
@@ -2694,7 +2694,7 @@ Section ABSTRACT_LIST_SCHEDULER.
       rewrite <- in_rev; auto. rewrite <- in_rev; auto.
       eauto.
     - unfold HBR. *)
-  Admitted.
+  Admitted. *)
 
   (* Lemma dep_map_complete:
   forall l k pi1 pi2,
@@ -2834,19 +2834,23 @@ Section ABSTRACT_LIST_SCHEDULER.
   Admitted. *)
 
 
-  Lemma indep_nodes_inv': forall t o pi j,  In pi (indep_nodes' t j []) ->
+  (* Lemma indep_nodes_inv': forall t o pi j,  In pi (indep_nodes' t j []) ->
     exists ps : PS.t, (o, PTree.Nodes t) !! (fst pi) = Some (snd pi, ps).
   Proof.
     induction t.
     - intros.
-  Admitted.
+     (* simpl in H. specialize (IHt o pi (j~1) H).
+      destruct IHt as [ps ?]. exists ps. Print "!!". 
+      unfold PMap.get. unfold PTree.get; simpl. 
+      unfold PMap.get, PTree.get in H0; simpl in H0. unfold PTree.get'. eauto.  simpl. *)
+  Admitted. *)
 
-  Lemma indep_nodes_inv: forall pi M, In pi (indep_nodes M) ->
-    exists ps, M !! (fst pi) = Some (snd pi, ps).
+  (* Lemma indep_nodes_inv: forall pi M, In pi (indep_nodes M) ->
+    M !! (fst pi) = Some (snd pi, PS.empty).
   Proof. 
     intros. unfold indep_nodes in H. destruct M. simpl in H. destruct t. destruct H.
-    eapply indep_nodes_inv'. eauto.
-  Qed.
+    (* eapply indep_nodes_inv'. eauto. *)
+  Admitted. *)
 
 
   Inductive schedule_invariant
@@ -2876,6 +2880,28 @@ Section ABSTRACT_LIST_SCHEDULER.
       schedule_invariant l original scheduled remain
   .
 
+
+  Lemma dep_map_gen_in_list: 
+    forall nl p i ps, (dep_map nl) !! p = Some (i, ps) -> In (p, i) nl.
+  Proof.
+    induction nl.
+    - intros. simpl in H. unfold "!!" in H; simpl in H. inv H.
+    - intros. destruct a. simpl in H. Print "!!".
+    unfold "!!" in H; simpl in H.
+    (* unfold "!" in H; simpl in H. *)
+    (* unfold PTree.set in H. *)
+    remember (snd (dep_map nl)) as m. 
+    destruct m. Print PTree.get'.
+    { unfold "!", PTree.set in H. destruct (Pos.eq_dec p p0); subst.
+      { left. rewrite PTree.gss0 in H. inv H. auto. }
+      { right. rewrite PTree.gso0 in H; eauto. eapply IHnl.  
+        unfold "!!". rewrite <- Heqm. simpl; eauto. } }
+    { destruct (Pos.eq_dec p p0); subst.
+    { left. rewrite PTree.gss in H. inv H. auto. }
+    { right. rewrite PTree.gso in H; eauto. eapply IHnl.  
+      unfold "!!". rewrite <- Heqm. simpl; eauto. } }
+  Qed.
+
   Lemma initial_invariant_preserve:
     forall l, let original := dep_map_gen (numlistgen l) in
       schedule_invariant l original [] original.
@@ -2884,14 +2910,15 @@ Section ABSTRACT_LIST_SCHEDULER.
     - auto.
     - intros. destruct H.
     - intros. intro. destruct H0.
-    - intros. admit. (* TODO *)
-    
+    - intros. Print "!". Print PTree.get'. 
+      unfold dep_map_gen in original. apply in_rev.
+      eapply dep_map_gen_in_list; eauto. (* TODO *)
     - intro; intros. destruct H.
     (* - intros; auto. *)
     - intros; auto. eapply NoDup_nil.
     - intros. destruct H.
     - eapply topo_sorted_nil.
-  Admitted.
+  Qed.
 
   Lemma schedule_1_invariant_preserve:
     forall prior l original scheduled remain scheduled' remain',
@@ -2952,7 +2979,7 @@ Section ABSTRACT_LIST_SCHEDULER.
     - intros. monadInv H. eapply in_app_or in H0. destruct H0. (* need invariant nondup *)
       { eapply SORT'; auto. admit. (* pretty fine!, need invariant EXCLUSIVE *) }
       { simpl in H. destruct H. 2: { destruct H. } subst.
-        eapply firstpick_sound in EQ. eapply SORT'. (* fine, but need property of indep_nodes *) 
+         (* fine, but need property of indep_nodes *) 
         admit.   }
 
     (* SORT *)
