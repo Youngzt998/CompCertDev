@@ -2562,7 +2562,9 @@ Section ABSTRACT_LIST_SCHEDULER.
 
 
   (* Data structure to store dependence relation *)
+    (* ideally PTree should be enough, but changing involves too much codes *)
   Definition DPMap_t := PMap.t (option (instruction * PS.t)).
+  Definition DPTree_t := PTree.t (instruction * PS.t).
 
   (* Definition DPMap_init := PMap.init (option (instruction * S.t)). *)
   (* Definition DPMap_set := PMap.set (option (instruction * S.t)). *)
@@ -2580,49 +2582,44 @@ Section ABSTRACT_LIST_SCHEDULER.
                         else dep_pset i l_rev'
     end.
 
-  Fixpoint dep_map (l_rev: numblock): DPMap_t :=
+  Fixpoint dep_tree (l_rev: numblock): DPTree_t :=
+    match l_rev with
+    | nil => PTree.empty (instruction * PS.t)
+    | (k, i) :: l_rev' => PTree.set k (i, dep_pset i l_rev') (dep_tree l_rev')
+    end. 
+
+  (* Definition dep_map (l_rev: numblock): DPMap_t := (None, dep_tree l_rev). *)
+
+  (* Fixpoint dep_map (l_rev: numblock): DPMap_t :=
     match l_rev with
     | nil => PMap.init None
     | (k, i) :: l_rev' => PMap.set k (Some (i, dep_pset i l_rev')) (dep_map l_rev')
-    end.
+    end. *)
 
   (* Compute the map that stores the dependence relation inside a basic block *)
-  Definition dep_map_gen (nl: list (positive * instruction)) :=
-    dep_map (List.rev nl).
+  Definition dep_tree_gen (nl: list (positive * instruction)) :=
+    dep_tree (List.rev nl).
+  
+  (* Definition dep_map_gen (nl: list (positive * instruction)) :=
+    dep_map (List.rev nl). *)
+
+  
+
+  (* Lemma dep_map_default_none: forall nl, fst (dep_map nl) = None.
+  Proof. induction nl; simpl; auto. Qed. *)
 
 
-  (* Lemma dep_map_gen_included:
-   forall l p i ps, (dep_map_gen (numlistgen l)) !! p = Some (i, ps) -> In (p, i) (numlistgen l).
-  Proof.
-
-  Admitted. *)
-
-  Locate positive. Print positive. Locate Pos.of_nat.
-
-  (* Definition dep_GenRb (l: list instruction) (pi1 pi2: positive * instruction): bool :=
-    let M := dep_map (List.rev (numlistgen l)) in
-    match PMap.get (fst pi1) M with
-    | None => false
-    | Some (i, ps) => PS.mem (fst pi2) ps
-    end. *)
 
 
-  Definition dep_map_gen' (i: positive) (l: list instruction) :=
-    dep_map (List.rev (numlistgen' l i)).
 
-  (* Definition dep_GenRb' (i: positive) (l: list instruction) (pi1 pi2: positive * instruction): bool :=
-    let M := dep_map (List.rev (numlistgen' l i)) in
-    match PMap.get (fst pi1) M with
-    | None => false
-    | Some (i, ps) => PS.mem (fst pi2) ps
-    end. *)
-
+(* 
   Inductive dec_numlist: list (positive*instruction) -> Prop :=
   | dec_numlist_nil: dec_numlist []
   | dec_numlist_cons: forall pi nl, dec_numlist nl ->
       (forall pi', In pi' nl -> (fst pi') < (fst pi)) ->
         dec_numlist (pi::nl)
-  .
+  . *)
+
 
   (* Lemma dep_map_sound_prepare:
   forall nl pi1 pi2 i ps, dec_numlist nl -> In pi1 nl -> In pi2 nl -> 
@@ -2660,21 +2657,6 @@ Section ABSTRACT_LIST_SCHEDULER.
   
   Admitted. *)
 
-  (* Lemma dep_map_sound':
-    let P := 
-      fun l =>     
-      forall k pi1 pi2 i ps, In pi1 (numlistgen' l k) -> In pi2 (numlistgen' l k) -> 
-      let M := dep_map (List.rev (numlistgen' l k)) in
-        PMap.get (fst pi1) M = Some (i, ps) ->
-          PS.mem (fst pi2) ps = true ->
-            GenR' HBR l k pi2 pi1
-    in
-    forall l, P l.
-  Proof.
-    apply rev_ind.
-    - intros. simpl in H. destruct H.
-    - intros. 
-  Abort. *)
 
 
   (* Lemma dep_map_sound':
@@ -2744,70 +2726,93 @@ Section ABSTRACT_LIST_SCHEDULER.
   (* Nodes that are independent, a.k.a ready to be scheduled in current dependence graph
         a node is empty indicates that it is independent
           and no other instrucion have to happens before it *)
-  Fixpoint indep_nodes'  (m : PTree.tree' (option (instruction * PS.t))) (i: positive) 
+  Fixpoint indep_nodes'  (m : PTree.tree' (instruction * PS.t)) (i: positive) 
     (k: list (positive * instruction)) {struct m}: list (positive * instruction) :=
     match m with
     | PTree.Node001 r => indep_nodes' r (xI i) k
     | PTree.Node010 x => 
-        match x with 
+        if PositiveSet.is_empty (snd x) 
+        then (PTree.prev i, fst x) :: k
+        else k
+        (* match x with 
         | Some xp => if PositiveSet.is_empty (snd xp) 
                      then (PTree.prev i, fst xp) :: k
                      else k
         | None => k
-        end
+        end *)
     | PTree.Node011 x r =>
-        match x with 
+        if PositiveSet.is_empty (snd x) 
+        then (PTree.prev i, fst x) :: indep_nodes' r (xI i) k
+        else indep_nodes' r (xI i) k
+        (* match x with 
         | Some xp => if PositiveSet.is_empty (snd xp) 
                      then (PTree.prev i, fst xp) :: indep_nodes' r (xI i) k
                      else indep_nodes' r (xI i) k
         | None => indep_nodes' r (xI i) k
-        end
+        end *)
     | PTree.Node100 l => indep_nodes' l (xO i) k
     | PTree.Node101 l r => indep_nodes' l (xO i) (indep_nodes' r (xI i) k)
     | PTree.Node110 l x =>
-        match x with 
+        if PositiveSet.is_empty (snd x) 
+        then indep_nodes' l (xO i) ((PTree.prev i, fst x) :: k)
+        else indep_nodes' l (xO i) k
+        (* match x with 
         | Some xp =>  if PositiveSet.is_empty (snd xp) 
-                      then indep_nodes' l (xO i) ((PTree.prev i, fst xp) ::k)
+                      then indep_nodes' l (xO i) ((PTree.prev i, fst xp) :: k)
                       else indep_nodes' l (xO i) k
         | None => indep_nodes' l (xO i) k
-        end
+        end *)
     | PTree.Node111 l x r => 
-        match x with 
+        if PositiveSet.is_empty (snd x)
+        then ((PTree.prev i, fst x) :: (indep_nodes' r (xI i) k))
+        else (indep_nodes' r (xI i) k)
+        (* match x with 
         | Some xp =>  if PositiveSet.is_empty (snd xp)
                       then ((PTree.prev i, fst xp) :: (indep_nodes' r (xI i) k))
                       else (indep_nodes' r (xI i) k)
         | None => indep_nodes' l (xO i) k
-        end
+        end *)
     end.
 
-  Definition indep_nodes (m : DPMap_t): list (positive * instruction) := 
-    match snd m with 
+  Definition indep_nodes (m : DPTree_t): list (positive * instruction) := 
+    match m with 
     | PTree.Empty => nil 
     | PTree.Nodes m' => indep_nodes' m' xH nil 
     end.
 
   Print option_map.
 
-  Definition remove_node0 (p: positive) (node: option (instruction * PS.t)) :=
+  Check PS.remove.
+
+  Definition remove_node0 (p: positive) (node: instruction * PS.t) :=
+    (fst node, PS.remove p (snd node)).
+
+  Definition remove_node (p: positive) (m: DPTree_t): DPTree_t :=
+     PTree.map1 (remove_node0 p) (PTree.remove p m).
+
+  (* Definition remove_node0 (p: positive) (node: option (instruction * PS.t)) :=
     match node with
     | Some (i, ps) => Some (i, PS.remove p ps) 
     | None => None
-    end.
+    end. *)
 
-  Definition remove_node (p: positive) (m: DPMap_t): DPMap_t :=
-    (fst m, PTree.map1 (remove_node0 p) (PTree.remove p (snd m))).
+  (* Definition remove_node (p: positive) (m: DPMap_t): DPMap_t :=
+    (fst m, PTree.map1 (remove_node0 p) (PTree.remove p (snd m))). *)
+
+  (* Definition remove_node (p: positive) (m: DPTree_t): DPTree_t :=
+     PTree.map1 (remove_node0 p) (PTree.remove p m). *)
 
   (* return the one to schedule and the new dependence relation after removing it *)
-  Definition schedule_1 (prior: PMap.t positive) (original: DPMap_t)
-    (scheduled: list (positive * instruction)) (remain: DPMap_t)
-     : res (list (positive * instruction) * DPMap_t) :=
+  Definition schedule_1 (prior: PMap.t positive) (original: DPTree_t)
+    (scheduled: list (positive * instruction)) (remain: DPTree_t)
+     : res (list (positive * instruction) * DPTree_t) :=
   let available := indep_nodes remain in
     do pi <- firstpick prior available;
     OK (scheduled ++ [pi], remove_node (fst pi) remain).
    
-  Fixpoint schedule_n (prior: PMap.t positive) (L: nat) (original: DPMap_t)
-    (scheduled: list (positive * instruction)) (remain: DPMap_t)
-      : res (list (positive * instruction) * DPMap_t) :=
+  Fixpoint schedule_n (prior: PMap.t positive) (L: nat) (original: DPTree_t)
+    (scheduled: list (positive * instruction)) (remain: DPTree_t)
+      : res (list (positive * instruction) * DPTree_t) :=
     match L with
     | O => OK (scheduled, remain)
     | Datatypes.S L' => 
@@ -2816,80 +2821,78 @@ Section ABSTRACT_LIST_SCHEDULER.
     end.
   
   Definition schedule_numblock (nl: list (positive * instruction)) :=
-  let m := dep_map_gen nl in
+  let m := dep_tree_gen nl in
   let prior := prio_map (prioritizer (numlistoff nl)) in
     do (nl', m) <- schedule_n prior (List.length nl) m [] m;
     OK nl'.
 
-  (* Can test compiler using this function without finishing proof *)
+  (* The actual compiler pass as the case study *)
+    (* Can test compiler using this function without finishing proof *)
   Definition list_schedule' := schedule_program schedule_numblock.
 
 
 
-  (* Lemma remove_node_submap: 
-  forall m p1 p2 i2 ps2, (remove_node p1 m) !! p2 = Some (i2, ps2) ->
-    m !! p2 = Some (i2, ps2).
+  (* The proof of forward simulation preservation of the compiler pass, 
+        based on previous abstract framework *)
+
+  (* Definition ListRepMap (nl: list (positive*instruction)) (m: DPMap_t): Prop :=
+    forall p i, In (p, i) nl <-> exists ps, m !! p = Some (i, ps) .  *)
+  
+  
+  Fixpoint dec_numlist (nl: list (positive * instruction)) : Prop :=
+    match nl with
+    | [] => True
+    | (p1, i1) :: nl' =>
+      match nl' with
+      | [] => True
+      | (p2, i2) :: nl'' => p1 > p2 /\ dec_numlist nl'
+      end
+    end.
+
+  Definition op_trans (po: positive * option (instruction * PS.t)): positive * instruction :=
+    let (p, o) := po in
+    match o with
+    | Some (i, ps) => (p, i)
+    | None => (p, Llabel 1) (* case that should never occur *)
+    end.
+  
+  Lemma dep_tree_sound:
+    forall nl p1 i1 p2 i2 i ps, dec_numlist nl ->
+    In (p1, i1) nl -> 
+      (dep_tree nl) ! p2 = Some (i, ps) -> PS.mem p1 ps = true ->
+          HBR i1 i2 -> p1 < p2.
   Proof.
-    intros. unfold remove_node in H.
-  Admitted. *)
 
-
-  (* Lemma indep_nodes_inv': forall t o pi j,  In pi (indep_nodes' t j []) ->
-    exists ps : PS.t, (o, PTree.Nodes t) !! (fst pi) = Some (snd pi, ps).
+  Admitted.
+  
+  
+  (* Lemma dep_map_sound:
+    forall nl p1 i1 p2 i2 i ps, dec_numlist nl ->
+    In (p1, i1) nl -> 
+      (dep_map nl) !! p2 = Some (i, ps) -> PS.mem p1 ps = true ->
+          HBR i1 i2 -> p1 < p2.
   Proof.
-    induction t.
-    - intros.
-     (* simpl in H. specialize (IHt o pi (j~1) H).
-      destruct IHt as [ps ?]. exists ps. Print "!!". 
-      unfold PMap.get. unfold PTree.get; simpl. 
-      unfold PMap.get, PTree.get in H0; simpl in H0. unfold PTree.get'. eauto.  simpl. *)
-  Admitted. *)
+    intros. remember (dep_map nl) as M. destruct M.
+    unfold "!!" in H1; simpl in H1. Print PMap.set.
+    destruct (dep_map nl).
 
-  (* Lemma indep_nodes_inv: forall pi M, In pi (indep_nodes M) ->
-    M !! (fst pi) = Some (snd pi, PS.empty).
-  Proof. 
-    intros. unfold indep_nodes in H. destruct M. simpl in H. destruct t. destruct H.
-    (* eapply indep_nodes_inv'. eauto. *)
   Admitted. *)
 
 
-  Inductive schedule_invariant
-    (* (original: list instruction) (originaln := numlistgen original)
-    (scheduled: list (positive * instruction))  (remain: DPMap_t) *)
-    (l: list instruction) (original: DPMap_t)
-    (scheduled: list (positive * instruction)) (remain: DPMap_t)
-    : Prop := 
-    | sched_inv_intro
-      (L2MAP: original = dep_map_gen (numlistgen l))
-      (EXCLUSIVE1: forall pi, List.In pi scheduled -> PMap.get (fst pi) remain = None)
-      (EXCLUSIVE2: forall pi ps, PMap.get (fst pi) remain = Some (snd pi, ps) -> ~ List.In pi scheduled)
-      (SUBMAP: forall p i ps, PMap.get p remain = Some (i, ps) -> In (p, i) (numlistgen l) ) (* TODO: subset relation *)
-        
-      (* (SUBLIST: forall pi i, List.In pi scheduled -> exists ps, PMap.get (fst pi) original = Some (i, ps) ) *)
-      (SUBLIST: incl scheduled (numlistgen l) )
-      (* (INCL: forall p i ps, PMap.get p original = Some (i, ps) -> 
-                PMap.get p remain = Some (i, ps) \/ List.In (p, i) scheduled) *)
-      (NODUP: NoDup scheduled)
-      (SORT': forall pi1 pi2 ps2 i, In pi1 scheduled -> remain !! (fst pi2) = Some (i, ps2) ->
-                 ~ GenR HBR l pi2 pi1)
-      (SORT: tsorted HBR l scheduled) 
-      (* (SORT: forall p1 i1 p2 i2 ps2, List.In (p1, i1) scheduled ->  PMap.get p2 remain = Some (i2, ps2) ->
-               True )  *)
-               (* TODO *)
-      :
-      schedule_invariant l original scheduled remain
-  .
+  Lemma dep_tree_gen_in_list: 
+  forall nl p i ps, (dep_tree nl) ! p = Some (i, ps) -> In (p, i) nl.
+  Proof.
+
+  Admitted.
 
 
-  Lemma dep_map_gen_in_list: 
+  (* Lemma dep_map_gen_in_list: 
     forall nl p i ps, (dep_map nl) !! p = Some (i, ps) -> In (p, i) nl.
   Proof.
     induction nl.
     - intros. simpl in H. unfold "!!" in H; simpl in H. inv H.
     - intros. destruct a. simpl in H. Print "!!".
     unfold "!!" in H; simpl in H.
-    (* unfold "!" in H; simpl in H. *)
-    (* unfold PTree.set in H. *)
     remember (snd (dep_map nl)) as m. 
     destruct m. Print PTree.get'.
     { unfold "!", PTree.set in H. destruct (Pos.eq_dec p p0); subst.
@@ -2900,19 +2903,103 @@ Section ABSTRACT_LIST_SCHEDULER.
     { left. rewrite PTree.gss in H. inv H. auto. }
     { right. rewrite PTree.gso in H; eauto. eapply IHnl.  
       unfold "!!". rewrite <- Heqm. simpl; eauto. } }
-  Qed.
+  Qed. *)
+
+  Lemma remove_get1: forall p (m: DPTree_t), (remove_node p m) ! p = None.
+  Proof.
+    (* intros. unfold remove_node. unfold "!!", "!"; simpl. 
+    remember (PTree.map1 (remove_node0 p) (PTree.remove p (snd m))) as M.
+    destruct M; auto. destruct m as [m1 m2]; simpl. Check PTree.get' p t.
+    remember (PTree.get' p t) as G. destruct G; auto. simpl in HeqM.
+    assert(PTree.get p (PTree.Nodes t) = Some o). { unfold "!". auto. }
+    rewrite HeqM in H0. erewrite PTree.gmap1 in H0. 
+    unfold option_map in H0. erewrite PTree.grs in H0. inv H0.  *)
+  Admitted.
+
+  Lemma remove_get2: forall p p' (m: DPTree_t),
+    m ! p = None -> (remove_node p' m) ! p = None.
+  Proof. Admitted.
+
+  Lemma remove_get3: forall p p' i ps (m: DPTree_t),
+    (remove_node p' m) ! p = Some (i, ps) -> m ! p = Some (i, ps).
+  Proof. Admitted.
+
+
+(* 
+  Lemma indep_nodes_indep: forall t j nl p i,
+    In (p, i) (indep_nodes' t j nl) -> 
+      PTree.get' p t = (Some (i, PS.empty)).
+  Proof.
+    
+
+  Admitted.
+
+
+
+  Lemma indep_nodes_property': forall t j nl p1 i1 p2 i2 ps2,
+    In (p1, i1) (indep_nodes' t j nl) -> 
+      PTree.get' p2 t = Some (Some (i2, ps2)) -> HBR i2 i1 -> p1 < p2.
+  Proof.
+    intros t. induction t.
+    - intros. Locate "~". simpl in H. unfold "~" in H.
+  Admitted. *)
+
+
+
+  (* Lemma indep_nodes_property: forall m p1 i1 p2 i2 ps2, fst m = None ->
+    In (p1, i1) (indep_nodes m) -> m !! p2 = Some (i2, ps2) -> HBR i2 i1 -> p1 < p2.
+  Proof.
+    intros. Check (PTree.elements (snd m)). destruct m. destruct t. simpl in H0. destruct H0.
+    unfold indep_nodes in H0. simpl in H0.
+    unfold "!!" in H1; simpl in H1.
+    remember (PTree.Nodes t) ! p2 as x.
+    destruct x.
+    - unfold "!" in Heqx. subst. eapply indep_nodes_property'; eauto.
+    - simpl in H; subst. inv H1. 
+  Qed. *)
+
+
+  Inductive schedule_invariant
+    (* (original: list instruction) (originaln := numlistgen original)
+    (scheduled: list (positive * instruction))  (remain: DPMap_t) *)
+    (l: list instruction) (original: DPTree_t)
+    (scheduled: list (positive * instruction)) (remain: DPTree_t)
+    : Prop := 
+    | sched_inv_intro
+      (L2MAP: original = dep_tree_gen (numlistgen l))
+      (* (AUX1: fst remain = None) *)
+      (EXCLUSIVE1: forall pi, List.In pi scheduled -> remain ! (fst pi) = None)
+      (EXCLUSIVE2: forall pi ps, remain ! (fst pi) = Some (snd pi, ps) -> ~ List.In pi scheduled)
+      (SUBMAP: forall p i ps, remain ! p = Some (i, ps) -> In (p, i) (numlistgen l) ) (* TODO: subset relation *)
+        
+      (* (SUBLIST: forall pi i, List.In pi scheduled -> exists ps, PMap.get (fst pi) original = Some (i, ps) ) *)
+      (SUBLIST: incl scheduled (numlistgen l) )
+      (* (INCL: forall p i ps, PMap.get p original = Some (i, ps) -> 
+                PMap.get p remain = Some (i, ps) \/ List.In (p, i) scheduled) *)
+      (NODUP: NoDup scheduled)
+      (SORT': forall pi1 pi2 ps2 i, In pi1 scheduled -> remain ! (fst pi2) = Some (i, ps2) ->
+                 ~ GenR HBR l pi2 pi1)
+      (SORT: tsorted HBR l scheduled) 
+      (* (SORT: forall p1 i1 p2 i2 ps2, List.In (p1, i1) scheduled ->  PMap.get p2 remain = Some (i2, ps2) ->
+               True )  *)
+               (* TODO *)
+      :
+      schedule_invariant l original scheduled remain
+  .
 
   Lemma initial_invariant_preserve:
-    forall l, let original := dep_map_gen (numlistgen l) in
+    forall l, let original := dep_tree_gen (numlistgen l) in
       schedule_invariant l original [] original.
   Proof.
     intros. apply sched_inv_intro.
     - auto.
+    (* - unfold original, dep_map_gen. simpl. eapply dep_map_default_none. *)
     - intros. destruct H.
     - intros. intro. destruct H0.
     - intros. Print "!". Print PTree.get'. 
-      unfold dep_map_gen in original. apply in_rev.
-      eapply dep_map_gen_in_list; eauto. (* TODO *)
+      unfold dep_tree_gen in original.
+      apply in_rev.
+      eapply dep_tree_gen_in_list; eauto. (* TODO *)
     - intro; intros. destruct H.
     (* - intros; auto. *)
     - intros; auto. eapply NoDup_nil.
@@ -2928,63 +3015,53 @@ Section ABSTRACT_LIST_SCHEDULER.
   Proof.
     intros. inv H0. eapply sched_inv_intro.
     - auto.
+    (* AUX1 *)
+    (* - monadInv H. unfold remove_node; simpl; auto. *)
     (* EXCLUSIVE1 *)
-    - monadInv H. intros.
+    - monadInv H. intros. 
       eapply in_app_or in H; destruct H.
-      eapply EXCLUSIVE1 in H. admit. (* pretty fine *)
-      inv H. simpl. admit. (* fine, need property about remove_node *)
+      eapply EXCLUSIVE1 in H; simpl in H. eapply remove_get2; auto.
+      inv H. destruct pi as [p i]; simpl. eapply remove_get1; auto.
       destruct H0.
     (* EXCLUSIVE2 *)
-    - monadInv H.  intros. intro.
-      eapply in_app_or in H0; destruct H0.
-      eapply EXCLUSIVE1 in H0. (* fine, need property about remove_node *)
-      admit.
-      inv H0. simpl in H. admit. (* fine, need property about remove_node *)
-      destruct H1.
-    
+    - monadInv H. intros. intro.
+      eapply in_app_or in H0; destruct H0; auto.
+      { eapply EXCLUSIVE1 in H0. eapply remove_get2 in H0. erewrite H0 in H. inv H. }
+      (* fine, need property about remove_node *)
+      { inv H0. erewrite remove_get1 in H. inv H; destruct H1. destruct H1. }
     (* SUBMAP *)
     - intros. monadInv H. eapply SUBMAP.
-      admit. (* fine *)
-
+      eapply remove_get3; eauto.
     (* SUBLIST *)
     - intros. monadInv H. intro; intros. eapply in_app_or in H.
       destruct H. eapply SUBLIST; eauto.
-      inv H. 2:{ destruct H0. }
-      eapply firstpick_sound in EQ.
+      inv H.  eapply firstpick_sound in EQ.
       admit. (* fine, need property about indep_nodes  *)
-    
-    (* eapply in_app_or in H0. destruct H0; auto.
-      simpl in H. destruct H. subst. 
-      assert(exists ps, remain !! (fst pi) = Some (i, ps)).
-      { admit. } destruct H.
-      (* eapply SUBMAP in H. destruct H. destruct H. exists x0; auto.
-      destruct H. *)
-      admit. admit. *)
-(*     
-    (* INCL *)
-    - admit. (* TODO maybe useless*)
-
-
-     *)
-
+      destruct H0.
     (* NODUP *)
     - monadInv H.
       assert(NoDup_swap: forall (A: Type) (l1 l2: list A), NoDup (l1 ++ l2) -> NoDup (l2++l1)).
       { admit. }
       eapply NoDup_swap. eapply NoDup_cons; auto.
-      destruct x. eapply EXCLUSIVE2. eapply firstpick_sound in EQ.
+      eapply EXCLUSIVE2. destruct x. 
+      eapply firstpick_sound in EQ; simpl.
       admit. (* fine, need more property about indep_nodes *)
     
     (* SORT' *)
-    - intros. monadInv H. eapply in_app_or in H0. destruct H0. (* need invariant nondup *)
-      { eapply SORT'; auto. admit. (* pretty fine!, need invariant EXCLUSIVE *) }
-      { simpl in H. destruct H. 2: { destruct H. } subst.
-         (* fine, but need property of indep_nodes *) 
-        admit.   }
+    - intros. monadInv H. eapply in_app_or in H0. destruct H0.
+      { eapply SORT'; auto. eapply remove_get3; eauto. }
+      { inv H. intro. destruct pi1 as [p1 i1]. destruct pi2 as [p2 i2]; simpl in *.
+        inv H; simpl in *.
+        eapply firstpick_sound in EQ. 
+        eapply remove_get3 in H1.
+        
+        admit.
+        destruct H0.   }
 
     (* SORT *)
     - monadInv H. eapply topo_soerted_app; eauto. intros.
-      destruct x, a.
+      (* intro. destruct x, a. inv H0; simpl in *. *)
+       
       eapply SORT'; eauto.
       admit. (* fine but need more lemmas on indep_nodes *)
 
@@ -3003,7 +3080,7 @@ Section ABSTRACT_LIST_SCHEDULER.
 
   Lemma final_invariant_preserve:
     forall prior l scheduled' remain',
-    let original := dep_map_gen (numlistgen l) in
+    let original := dep_tree_gen (numlistgen l) in
     let L := length l in
       schedule_n prior L original [] original = OK (scheduled', remain') ->
         schedule_invariant l original scheduled' remain'.
@@ -3036,7 +3113,6 @@ Section ABSTRACT_LIST_SCHEDULER.
         length scheduled' = L.
   Proof. intros. eapply schedule_n_length_n in H. simpl in H. lia. Qed. 
 
-
   Lemma schedule_numblock_correct:
     forall l nl', schedule_numblock (numlistgen l) = OK nl' ->
       treorder HBR l (numlistgen l) nl'.
@@ -3050,12 +3126,9 @@ Section ABSTRACT_LIST_SCHEDULER.
         rewrite EQ. symmetry. eapply numlistgen_length. }
       { eapply numlistgen_NoDup. }
       { inv INV; eapply NODUP. }
-      { inv INV; eauto.
-       (* intro; intros. destruct a as [p i].
-        eapply SUBLIST in H as ?. destruct H0. eapply dep_map_gen_included; eauto.  *)
-        }
+      { inv INV; eapply SUBLIST. }
     - eapply tsorted_self.
-    - inv INV. eauto.
+    - inv INV; exact SORT.
   Qed.
 
   Theorem abstract_list_schedule_forward_simulation:
@@ -3066,15 +3139,6 @@ Section ABSTRACT_LIST_SCHEDULER.
     eapply schedule_numblock_correct.
   Qed.
 
-
-
-
-  (* Lemma schedule_block_topo_reorder: *)
-
-
-
-
-  Print PTree.map.
 
 End ABSTRACT_LIST_SCHEDULER.
 
