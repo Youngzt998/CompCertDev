@@ -40,22 +40,7 @@ Require Import List Lia.
   Qed.
 End LIST_INDUCTION. *)
 
-(** exists in standard lib *)
-(* Section LIST_REV_INDUCTION.  
-  Variable A : Type.
-  Variable P : list A -> Prop.
-  Hypothesis BASE: P nil.
-  Hypothesis IND: forall l a, P l -> P (l ++ [a]).
 
-  Theorem list_ind_rev: forall l, P l.
-  Proof.
-    induction l; eauto.
-
-
-End LIST_REV_INDUCTION. *)
-
-
-(** TODO: move to separate file *)
 Open Scope nat_scope.
 Require Import Relations.Relation_Definitions.
 Section TRY_SWAP.
@@ -71,10 +56,6 @@ Section TRY_SWAP.
     | Datatypes.S n', i :: l' => i :: try_swap n' l'
     end.
   
-  (* Lemma try_swap_later: 
-    forall (n:nat) l a, 0 < n -> try_swap n (a :: l) = a :: try_swap (n-1) l.
-  Proof. Admitted. *)
-
   Lemma try_swap_nil: forall n, try_swap n [] = [].
   Proof. intros; destruct n; auto. Qed.
 
@@ -121,10 +102,26 @@ End TRY_SWAP.
 
 
 
-
-
 Require Import Sorting.Permutation.
 Section TOPO_REORDER.
+
+  Lemma NoDup_swap': forall (A: Type)  (l1 l2: list A) (a: A), NoDup (a :: l1 ++ l2) -> NoDup (l1 ++ a :: l2).
+  Proof.
+    induction l1; intros; simpl in H.
+    - inv H. eapply NoDup_cons; auto.
+    - simpl. apply NoDup_cons. inv H. inv H3.
+      { intro. eapply in_app_or in H. destruct H.
+        apply H1. eapply in_or_app; left; auto.
+        destruct H; subst. apply H2; left; auto. apply H1. apply in_or_app. right; auto. }
+      { inv H. inv H3. eapply IHl1. eapply NoDup_cons; auto. intro. apply H2. right; auto. }
+  Qed.
+
+  Lemma NoDup_swap: forall (A: Type) (l1 l2: list A), NoDup (l1 ++ l2) -> NoDup (l2++l1).
+  Proof.
+    induction l1; intros; simpl in *. rewrite app_nil_r; auto.
+    inv H. eapply NoDup_swap'. eapply NoDup_cons; auto. intro.
+    apply H2. apply in_app_or in H. apply in_or_app. destruct H. right; auto. left; auto. 
+  Qed.
 
   Context {A: Type}.
 
@@ -132,37 +129,13 @@ Section TOPO_REORDER.
   Inductive NoDupSame: list A -> list A -> Prop :=
   | NoDupSame_intro:
     forall l1 l2, NoDup l1 -> NoDup l2 -> incl l1 l2 -> incl l2 l1 ->
-      NoDupSame l1 l2
-  .
-  
-  Theorem SameLength_NoDupSame:
-    forall l1 l2, length l1 = length l2 -> NoDup l1 -> NoDup l2 -> incl l2 l1 -> NoDupSame l1 l2.
-  Proof. 
-    intros. eapply NoDupSame_intro; auto.
-    intro; intros. inv H0. destruct H3. 
-  Admitted.   
+      NoDupSame l1 l2.
 
+  Theorem SameLength_NoDupSame:
+    forall l2 l1, length l1 = length l2 -> NoDup l1 -> NoDup l2 -> incl l2 l1 -> NoDupSame l1 l2.
+  Proof. intros. constructor; auto. apply NoDup_length_incl; auto. lia. Qed.
 
   Variable R: A -> A -> Prop.
-
-  (* Inductive sublist: list A -> list A -> Prop :=
-  | sublist_refl: forall l, sublist l l
-  | sublist_rm: forall l l1 a l2, sublist (l1 ++ [a] ++ l2) l -> sublist (l1 ++ l2) l   
-  .
-
-  Lemma sublist_nil_all: forall l, sublist [] l.
-  Proof. induction l; intros. apply sublist_refl. 
-  Admitted.
-
-  Lemma sublist_same_length:
-    forall l' l, sublist l' l -> length l = length l' -> l = l'.
-  Proof.
-    induction l'. intros.
-    - admit.
-    - intros. destruct l.
-      + admit.
-      + 
-  Admitted. *)
 
   (* not greater than any elements in list *)
   Inductive ngt (a: A): list A -> Prop :=
@@ -242,12 +215,6 @@ Section TOPO_REORDER.
     simpl; eapply ngt_cons. eapply IHl1; eauto.
     eapply ngt_cons_inv; eauto. eapply ngt_cons_inv; eauto.
   Qed.
-
-  (* Lemma topo_reorder_is_permutation: forall l l', topo_reorder l l' -> Permutation l l'.
-  Proof.
-    intros. induction H. apply perm_nil. apply perm_skip; auto.
-    - apply perm_swap. - eapply perm_trans; eauto.
-  Qed. *)
 
   Lemma topo_reorder_incl: forall l l', topo_reorder l l' -> List.incl l l'.
   Proof.
@@ -379,23 +346,10 @@ Section TOPO_REORDER.
       eapply topo_sorted_cons. inv H0. inv H5; auto.
       eapply topo_sorted_cons_inv2. eapply topo_sorted_cons_inv2; eauto.
   Qed.
-  
-
-
 
 
   Lemma NoDupSame_nil: forall l, NoDupSame [] l -> l = [].
   Proof. induction l; intros; auto. inv H. apply incl_nil; eauto. Qed.
-
-  (* Lemma list_common_head_split: forall l1 l2: list A,
-    exists lh l1' l2', l1 = lh ++ l1' /\ l2 = lh ++ l2'.
-  Proof. exists [], l1, l2. simpl. auto. Qed. *)
-    (* induction l1. intros.
-    - exists [], [], l2. split; auto.
-    - exist intros. eapply IHl1 in H as [lh [l1' [l2' [? []]]]].
-      subst. exists (a :: lh), l1', l2'. split; auto.
-  Admitted. *)
-
 
   Lemma incl_remove: forall (a: A) l1 l2 l1' l2', NoDup (l1 ++ a :: l2) ->
     incl (l1 ++ a :: l2) (l1' ++ a :: l2') -> incl (l1 ++ l2) (l1' ++ l2').
@@ -526,9 +480,6 @@ End TOPO_REORDER.
 
 
 
-
-
-
 Open Scope positive_scope.
 Require Import List Lia.
 
@@ -564,6 +515,9 @@ Section LIST_TOPO.
   Lemma numlist_gen_off: forall l, numlistoff (numlistgen l) = l.
   Proof. intros. apply numlist_gen_off0. Qed.
   
+  Lemma numlist_gen_app:  forall l a j, numlistgen' (a :: l) j = (j, a) :: numlistgen' l (j+1).
+  Proof. intros. simpl; auto. Qed.
+
 
   Definition NoDupNum (l: list (positive * A)) := NoDup (List.map fst l).
 
@@ -659,12 +613,6 @@ Section LIST_TOPO.
   Variable R: A -> A -> Prop.
   Variable l: list A.
 
-  (* Generated Relation from a list *)
-  (* Inductive GenR (na1 na2: positive * A): Prop :=
-   GenR_intro: List.In na1 (numlistgen l) -> List.In na2 (numlistgen l) -> 
-    fst na1 < fst na2 -> R (snd na1) (snd na2)  -> GenR na1 na2
-  . *)
-
   (* Generated Relation from a list,
       aux. definition for simpler proofs *)
   Inductive GenR' (i: positive) (na1 na2: positive * A): Prop :=
@@ -719,9 +667,6 @@ Section SWAPPING_PROPERTY.
   Let Rbnum (na1 na2: positive * A) := Rb (snd na1) (snd na2).
   Let R := fun x y => Rb x y = true.
 
-  Lemma SymmetricRbnum: forall x y, Rbnum x y = Rbnum x y.
-  Proof. destruct x; destruct y. unfold Rbnum; simpl. rewrite SymmetricR; auto. Qed.
-
   Theorem swapping_property_general:
     forall l nl1 nl2, List.incl nl1 (numlistgen l) ->
       (* List.incl nl2 (numlistgen l) ->  *)
@@ -729,7 +674,7 @@ Section SWAPPING_PROPERTY.
       NoDupNum nl1 ->
         exists ln, nl2 = try_swap_seq Rbnum ln nl1.
   Proof.
-    intros. induction H0. 
+    intros. induction H0.
     - exists []. simpl. auto.
     - eapply List.incl_cons_inv in H as [].
       unfold NoDupNum in H1. eapply NoDupNum_cons_inv in H1.
@@ -777,7 +722,6 @@ Section SWAPPING_PROPERTY.
   Qed.
 
 End SWAPPING_PROPERTY.
-
 
 Section TRY_SWAP_NUM.
   Open Scope nat_scope.
@@ -912,8 +856,6 @@ Qed.
 Definition mem_read_op (op: operation) :=
   match op with
   | Ocmp _   => true
-  (* | Osel _ _ => true   *)
-      (* riscv does not have this op; compatible for x86, arm, powerpc, aarch64 *)
   | _ => false
   end.
 
@@ -982,6 +924,8 @@ Proof. boolean_equality. *)
 Definition mreg_eqb: mreg -> mreg -> bool.
 Proof. boolean_equality. Defined.
 
+Locate boolean_equality.
+
 Fixpoint mreg_list_eqb (l1 l2: list mreg): bool :=
   match l1, l2 with
   | m1 :: l1', m2 :: l2' => mreg_eq m1 m2 && mreg_list_eqb l1' l2'
@@ -995,13 +939,6 @@ Proof. boolean_equality. Defined.
 
 Lemma mreg_ident_eq: forall (s1 s2: mreg + ident), {s1 = s2} + {s1 <> s2}.
 Proof. generalize mreg_eq ident_eq. decide equality. Defined.
-
-(* Definition instruction_eqb: instruction -> instruction -> bool.
-Proof. 
-  generalize mreg_eq typ_eq slot_eq Z.eq_dec eq_addressing eq_operation chunk_eq signature_eq
-    mreg_ident_eq external_function_eq eq_condition peq.
-  boolean_equality. admit. admit.
-Admitted. *)
 
 
 Lemma mreg_eqb_refl: forall x, mreg_eqb x x = true.
@@ -1144,12 +1081,48 @@ Definition try_swap_code:= try_swap happens_before.
 Definition try_swap_nth_func (n: nat)(f: function):= 
     mkfunction f.(fn_sig) f.(fn_stacksize) (try_swap_code n f.(fn_code)) .
 
+
+Lemma hb_ww_symmetric: forall i1 i2, hb_ww i1 i2 = hb_ww i2 i1.
+Proof.
+  destruct i1; destruct i2; unfold hb_ww; simpl; auto; try erewrite <- mreg_eqb_symmetric;
+  try destruct (mreg_eq m m0); try destruct (mreg_eq m0 m); subst; auto; 
+  try (exfalso; apply n; auto); try destruct (mreg_eq m m1); try destruct (mreg_eq m1 m); subst; auto; 
+  try (exfalso; apply n; auto); try destruct (mreg_eq m0 m1); try destruct (mreg_eq m1 m0); subst; auto; 
+  try (exfalso; apply n; auto).
+  destruct (mreg_eq m0 m2); destruct (mreg_eq m2 m0); auto; exfalso; apply n; auto.
+Qed.
+
+Lemma hb_mem_symmetric: forall i1 i2, hb_mem i1 i2 = hb_mem i2 i1.
+Proof. intros. unfold hb_mem. destruct (mem_write i1); destruct (mem_write i2); simpl; auto.
+  destruct b; destruct b0; auto. destruct b; auto. destruct b; auto.
+Qed.
+
+(* Lemma hb_destroy_src_symmetric: forall i1 i2, hb_destroy_src i1 i2 = hb *)
+
+Lemma hb_destroy_symmetric: forall i1 i2, hb_destroy i1 i2 = hb_destroy i2 i1.
+Proof. intros. unfold hb_destroy.
+  destruct (hb_destroy_src i1 i2); destruct (hb_destroy_dst i1 i2);
+  destruct (hb_destroy_src i2 i1); destruct (hb_destroy_dst i2 i1);
+   try rewrite! orb_true_l; try rewrite! orb_false_l; auto.
+Qed.
+
 (* it is bad to name it "happens_before", but keep it for now *)
 Lemma happens_before_symmetric: 
   forall i1 i2, happens_before i1 i2 = happens_before i2 i1.
 Proof.
-  intros. unfold happens_before in *. remember (solid_inst i1) as b. destruct b.
-Admitted. 
+  intros. unfold happens_before in *.
+  destruct (solid_inst i1); destruct (solid_inst i2);
+    try rewrite! orb_true_l; try rewrite! orb_false_l; auto.
+  destruct (hb_rw i1 i2); destruct (hb_rw i2 i1);
+    try rewrite! orb_true_l; try rewrite! orb_false_l; auto.
+  rewrite hb_ww_symmetric.
+  destruct (hb_ww i2 i1);
+    try rewrite! orb_true_l; try rewrite! orb_false_l; auto.
+  rewrite hb_mem_symmetric.
+  destruct (hb_mem i2 i1);
+    try rewrite! orb_true_l; try rewrite! orb_false_l; auto.
+  apply hb_destroy_symmetric.
+Qed.
 
 Lemma solid_inst_indep1: forall i1 i2, solid_inst i1 = true -> i1 D~> i2 = true.
 Proof. intros. destruct i1, i2; simpl in *; try discriminate H; auto. Qed.
@@ -1273,12 +1246,6 @@ Section LOCSET_AGREE.
 End LOCSET_AGREE.
 
 
-(* Lemma find_function_ptr_genv_irrelevent:
-  forall ge1 ge2 ros rs,
-    (forall (s: ident), Genv.find_symbol ge1 s = Genv.find_symbol ge2 s) ->
-      find_function_ptr ge1 ros rs = find_function_ptr ge2 ros rs.
-Proof. intros. destruct ros; auto; simpl. apply H. Qed. *)
-
 Lemma extcall_genv_irrelevent:
   forall ge1 ge2 ef args m1 t res m2,
   Senv.equiv ge1 ge2 -> 
@@ -1388,10 +1355,6 @@ Definition transf_fundef_try_swap_nth (n: nat) (f: fundef) : res fundef :=
   AST.transf_partial_fundef (transf_function_try_swap_nth n) f.
 
 (** only swap one independent pair in one function *)
-(* Definition transf_program_try_swap_nth_in_one (funid: ident) (n: nat) (p: program): res program :=
-  transform_partial_program2 
-  (fun i f => if ident_eq i funid then transf_fundef_try_swap_nth n f else OK f) 
-  (fun i v => OK v) p. *)
 Fixpoint try_swap_prog_def_in_one (pos: nat) (n: nat)
                   (prog_defs: list (ident * globdef fundef unit)): 
                   list (ident * globdef fundef unit) :=
@@ -2508,19 +2471,6 @@ Section ABSTRACT_LIST_SCHEDULER.
 
   (* Some outside priority funcion. The prioirty oracle can be custumized.
         It should return the location of the first pick *)
-  (* Variable firstpick':
-    list (positive * instruction) -> (* already scheduled instruction*)
-      list (positive * instruction) ->  (* valid to schedule as next instruction *)
-        list (positive * instruction) ->  (* full original codes in the function *)
-          option positive.    *)
-          (* which one in valid-instrucion-list (2nd augument) to pick next *)
-
-  (* Definition firstpick:
-    list (positive * instruction) -> (* already scheduled instruction*)
-      list (positive * instruction) ->  (* valid to schedule as next instruction *)
-        list (positive * instruction) ->  (* full original codes in the function *)
-          positive * instruction.   (* which one in valid-instrucion-list (2nd augument) to pick next *)
-  Admitted. *)
 
   Variable prioritizer: list instruction -> list positive.
 
@@ -2547,13 +2497,16 @@ Section ABSTRACT_LIST_SCHEDULER.
 
   Definition firstpick (PM: PMap.t positive) (nl: list (positive * instruction)): res (positive*instruction) :=
     match nl with
-    | nil => Error (msg "Unexpected Error: Empty available inst to be scheduled")
+    | nil => Error (msg "Unexpected Error: Empty available instructions to be scheduled")
     | (p, i) :: nl' => OK (firstpick' ((p, i), PMap.get p PM) PM nl')
     end.
-  
+
+  Lemma firstpick'_sound: forall nl p i prio PM, In (firstpick' (p, i, prio) PM nl)  ((p, i) :: nl).
+  Proof. induction nl; intros. simpl; auto. destruct a. simpl.
+    destruct (prio <? PM !! p0); edestruct IHnl; eauto. Qed.
 
   Lemma firstpick_sound: forall PM nl pi, firstpick PM nl = OK pi -> In pi nl.
-  Proof. Admitted.
+  Proof. induction nl; intros. inv H. destruct a, pi. simpl in H. inv H. eapply firstpick'_sound. Qed.
 
   (* Definition firstpick (l1 l2 l3: numbblock) :=  *)
 
@@ -2613,56 +2566,6 @@ Section ABSTRACT_LIST_SCHEDULER.
         a node is empty indicates that it is independent
           and no other instrucion have to happens before it *)
 
-
-  (* TODO: abort this definition and change to a simpler one *)
-  (* Fixpoint indep_nodes'  (m : PTree.tree' (instruction * PS.t)) (i: positive) 
-    (k: list (positive * instruction)) {struct m}: list (positive * instruction) :=
-    match m with
-    | PTree.Node001 r => indep_nodes' r (xI i) k
-    | PTree.Node010 x => 
-        if PositiveSet.is_empty (snd x) 
-        then (PTree.prev i, fst x) :: k
-        else k
-        (* match x with 
-        | Some xp => if PositiveSet.is_empty (snd xp) 
-                     then (PTree.prev i, fst xp) :: k
-                     else k
-        | None => k
-        end *)
-    | PTree.Node011 x r =>
-        if PositiveSet.is_empty (snd x) 
-        then (PTree.prev i, fst x) :: indep_nodes' r (xI i) k
-        else indep_nodes' r (xI i) k
-        (* match x with 
-        | Some xp => if PositiveSet.is_empty (snd xp) 
-                     then (PTree.prev i, fst xp) :: indep_nodes' r (xI i) k
-                     else indep_nodes' r (xI i) k
-        | None => indep_nodes' r (xI i) k
-        end *)
-    | PTree.Node100 l => indep_nodes' l (xO i) k
-    | PTree.Node101 l r => indep_nodes' l (xO i) (indep_nodes' r (xI i) k)
-    | PTree.Node110 l x =>
-        if PositiveSet.is_empty (snd x) 
-        then indep_nodes' l (xO i) ((PTree.prev i, fst x) :: k)
-        else indep_nodes' l (xO i) k
-        (* match x with 
-        | Some xp =>  if PositiveSet.is_empty (snd xp) 
-                      then indep_nodes' l (xO i) ((PTree.prev i, fst xp) :: k)
-                      else indep_nodes' l (xO i) k
-        | None => indep_nodes' l (xO i) k
-        end *)
-    | PTree.Node111 l x r => 
-        if PositiveSet.is_empty (snd x)
-        then ((PTree.prev i, fst x) :: (indep_nodes' r (xI i) k))
-        else (indep_nodes' r (xI i) k)
-        (* match x with 
-        | Some xp =>  if PositiveSet.is_empty (snd xp)
-                      then ((PTree.prev i, fst xp) :: (indep_nodes' r (xI i) k))
-                      else (indep_nodes' r (xI i) k)
-        | None => indep_nodes' l (xO i) k
-        end *)
-    end. *)
-
   Goal forall nl, PTree.elements (dep_tree nl) = nil.
   intros. Check (PTree.elements (dep_tree nl)). Abort.
 
@@ -2679,12 +2582,6 @@ Section ABSTRACT_LIST_SCHEDULER.
   Definition indep_nodes (m : DPTree_t): list (positive * instruction) := 
     indep_nodes0 (PTree.elements m).
 
-  (* Definition indep_nodes (m : DPTree_t): list (positive * instruction) := 
-    match m with 
-    | PTree.Empty => nil 
-    | PTree.Nodes m' => indep_nodes' m' xH nil 
-    end. *)
-
   Print option_map.
 
   Check PS.remove.
@@ -2694,18 +2591,6 @@ Section ABSTRACT_LIST_SCHEDULER.
 
   Definition remove_node (p: positive) (m: DPTree_t): DPTree_t :=
      PTree.map1 (remove_node0 p) (PTree.remove p m).
-
-  (* Definition remove_node0 (p: positive) (node: option (instruction * PS.t)) :=
-    match node with
-    | Some (i, ps) => Some (i, PS.remove p ps) 
-    | None => None
-    end. *)
-
-  (* Definition remove_node (p: positive) (m: DPMap_t): DPMap_t :=
-    (fst m, PTree.map1 (remove_node0 p) (PTree.remove p (snd m))). *)
-
-  (* Definition remove_node (p: positive) (m: DPTree_t): DPTree_t :=
-     PTree.map1 (remove_node0 p) (PTree.remove p m). *)
 
   (* return the one to schedule and the new dependence relation after removing it *)
   Definition schedule_1 (prior: PMap.t positive) (original: DPTree_t)
@@ -2740,10 +2625,6 @@ Section ABSTRACT_LIST_SCHEDULER.
   (* The proof of forward simulation preservation of the compiler pass, 
         based on previous abstract framework *)
 
-  (* Definition ListRepMap (nl: list (positive*instruction)) (m: DPMap_t): Prop :=
-    forall p i, In (p, i) nl <-> exists ps, m !! p = Some (i, ps) .  *)
-  
-  
   Fixpoint dec_numlist (nl: list (positive * instruction)) : Prop :=
     match nl with
     | [] => True
@@ -2751,6 +2632,16 @@ Section ABSTRACT_LIST_SCHEDULER.
       match nl' with
       | [] => True
       | (p2, i2) :: nl'' => p1 > p2 /\ dec_numlist nl'
+      end
+    end.
+
+  Fixpoint incr_numlist (nl: list (positive * instruction)) : Prop :=
+    match nl with
+    | [] => True
+    | (p1, i1) :: nl' =>
+      match nl' with
+      | [] => True
+      | (p2, i2) :: nl'' => p1 < p2 /\ incr_numlist nl'
       end
     end.
 
@@ -2766,7 +2657,27 @@ Section ABSTRACT_LIST_SCHEDULER.
       simpl. split; auto. lia.
   Qed.
 
+  Lemma incr_numlist_min: forall nl pi, incr_numlist (pi :: nl) -> 
+    forall pi', In pi' nl -> fst pi' > fst pi.
+  Proof.
+    induction nl.
+    - intros. inv H0.
+    - intros. destruct H0; subst.
+      simpl in H. destruct pi, pi'. destruct H; simpl; auto. lia.
+      eapply IHnl; eauto. destruct nl. inv H0.
+      destruct pi, a, p. simpl in H. destruct H. destruct H1.
+      simpl. split; auto. lia.
+  Qed.
+
   Lemma dec_numlist_app: forall nl pi, dec_numlist (pi :: nl) -> dec_numlist nl.
+  Proof.
+    induction nl.
+    - intros; simpl; auto.
+    - intros; simpl; auto. destruct pi. destruct a. destruct nl; simpl; auto.
+      simpl in H. destruct H; auto.
+  Qed.
+
+  Lemma incr_numlist_app: forall nl pi, incr_numlist (pi :: nl) -> incr_numlist nl.
   Proof.
     induction nl.
     - intros; simpl; auto.
@@ -2796,6 +2707,30 @@ Section ABSTRACT_LIST_SCHEDULER.
   Lemma dec_numlist_nodup: forall nl, dec_numlist nl -> NoDup nl.
   Proof. intros. eapply nodup_number_nodup. eapply dec_numlist_nodupnum. auto. Qed.
 
+  Lemma app_tail_dec_numlist:
+    forall nl a, (forall pi, In pi nl -> fst pi > fst a) -> dec_numlist nl -> dec_numlist (nl ++ [a]).
+  Proof.
+    induction nl; intros. destruct a; auto.
+    destruct a. destruct a0. simpl. remember (nl ++ [(p0, i0)]) as ll. destruct ll; auto.
+    destruct p1. split; auto.
+    - destruct nl. inv Heqll. eapply (H (p, i)); left; auto. inv Heqll. destruct H0; auto.
+    - destruct nl. inv Heqll. simpl; auto. inv Heqll. eapply IHnl; eauto. intros. eapply H. right; auto.
+      eapply dec_numlist_app; eauto.
+  Qed.
+
+
+  Lemma incr_numlist_rev_dec: forall nl, incr_numlist nl -> dec_numlist (rev nl).
+  Proof. induction nl; intros. simpl; auto. simpl. eapply app_tail_dec_numlist; eauto.
+    intros. eapply in_rev in H0. eapply incr_numlist_min; eauto.
+    eapply IHnl. eapply incr_numlist_app; eauto. Qed.
+
+  Lemma numlist_gen_incr: forall l j, incr_numlist (numlistgen' l j).
+  Proof. induction l. simpl; auto. intros. destruct l. simpl; auto.
+    erewrite! numlist_gen_app. specialize (IHl (j + 1)). 
+    erewrite numlist_gen_app in IHl. split; auto. lia. Qed.
+
+  Lemma dec_numlist_numlistgen: forall l, dec_numlist (rev (numlistgen l)).
+  Proof. intros. eapply incr_numlist_rev_dec. eapply numlist_gen_incr. Qed.
 
 
   (** Properties of function dep_tree *)
@@ -2824,16 +2759,16 @@ Section ABSTRACT_LIST_SCHEDULER.
       { edestruct IHnl; eauto. exists x. destruct H0; split; auto. right; auto. }
   Qed.
 
-  Lemma dep_pset_complete: forall nl i p' i', In (p', i') nl /\ HBR i' i ->
+  Lemma dep_pset_complete: forall nl i p' i', In (p', i') nl -> HBR i' i ->
     PS.mem p' (dep_pset i nl) = true.
   Proof.
     induction nl.
-    - intros. destruct H. destruct H.
-    - intros. destruct H. destruct H; subst.
+    - intros. destruct H.
+    - intros. destruct H; subst.
       { remember (i' D~> i) as b. destruct b. simpl. rewrite <- Heqb. eapply PS.add_1; auto.
         hnf in H0. rewrite H0 in Heqb. inv Heqb. }
-      { assert (In (p', i') nl /\ HBR i' i). split; auto. eapply IHnl in H1. destruct a; simpl. 
-        remember (i0 D~> i) as b. destruct b; auto. eapply PS.add_2; eauto.   }
+      { assert (In (p', i') nl /\ HBR i' i). split; auto. destruct H1. eapply IHnl in H1; eauto. destruct a; simpl. 
+        remember (i0 D~> i) as b. destruct b; auto. eapply PS.add_2; eauto.    }
   Qed.
 
   Lemma dep_tree_pset_in_list:
@@ -2876,25 +2811,21 @@ Section ABSTRACT_LIST_SCHEDULER.
   Qed.
 
   Lemma dep_tree_complete:
-  forall nl p1 i1 p2 i2, dec_numlist nl ->
-    In (p1, i1) nl -> In (p2, i2) nl -> HBR i2 i1 -> p2 < p1 ->
-      exists ps1, (dep_tree nl) ! p1 = Some (i1, ps1) /\ PS.mem p2 ps1 = true.
+  forall nl p1 i1 ps1 p2 i2 ps2, dec_numlist nl ->
+    (dep_tree nl) ! p1 = Some (i1, ps1) -> (dep_tree nl) ! p2 = Some (i2, ps2) ->
+       HBR i2 i1 -> p2 < p1 -> PS.mem p2 ps1 = true.
   Proof.
-    induction nl.
-    - intros. destruct H0.
-    - intros. destruct a as [pa ia]. destruct H0; destruct H1.
-      { inv H0; inv H1. lia. }
-      { inv H0. exists (dep_pset i1 nl). simpl. erewrite PTree.gss; eauto. split; auto.
-        eapply dep_pset_complete; eauto. }
-      { inv H1. exfalso. eapply dec_numlist_max in H; eauto. simpl in H. lia. }
-      { assert(p1 <> pa /\ p2 <> pa). { eapply dec_numlist_nodupnum in H. unfold NoDupNum in H; simpl in H. split.
-            - eapply (in_map fst) in H0; eauto. intro; subst. inv H. eapply H6; auto.
-            - eapply (in_map fst) in H1; eauto. intro; subst. inv H. eapply H6; auto. }
-        destruct H4. eapply dec_numlist_app in H. specialize (IHnl p1 i1 p2 i2 H H0 H1 H2 H3).
-        destruct IHnl as [ps1]. destruct H6. exists ps1. split; auto.
-        simpl. erewrite PTree.gso; eauto.  } 
+    induction nl; intros.
+    - simpl in H0. erewrite PTree.gempty in H0. inv H0.
+    - destruct a as [pa ia]. simpl in H0, H1.
+      destruct(Pos.eq_dec p1 pa); destruct(Pos.eq_dec p2 pa); subst.
+      { lia. } 
+      { erewrite PTree.gss in H0. erewrite PTree.gso in H1; eauto.
+        inv H0. eapply dep_pset_complete; eauto. eapply dep_tree_in_list; eauto. }
+      { exfalso. erewrite PTree.gss in H1. inv H1. erewrite PTree.gso in H0; eauto.
+        eapply dep_tree_in_list in H0; eauto.  eapply dec_numlist_max in H; eauto. simpl in H. lia. }
+      {  erewrite PTree.gso in H0, H1; eauto. eapply IHnl; eauto.  eapply dec_numlist_app; eauto. }
   Qed.
-
 
   (** properties of function remove_node *)
 
@@ -2933,17 +2864,6 @@ Section ABSTRACT_LIST_SCHEDULER.
       { inv H. }
   Qed.
 
-
-  (* Lemma indep_nodes'_in_tree: forall t p i x nl, In (p, i) (indep_nodes' t x nl) ->
-    exists ps, (PTree.Nodes t) ! p = Some (i, ps) /\ PS.Empty ps.
-  Proof.
-    induction t; intros; simpl in H.
-    - eapply IHt in H. destruct H as [ps []]. exists ps.
-      unfold PTree.get. unfold PTree.get'. simpl.
-  
-  
-  Admitted. *)
-
   Lemma indep_nodes_in_tree00: forall ll p i, In (p, i) (indep_nodes0 ll) ->
     exists ps, In (p, (i, ps)) ll /\ PS.Empty ps.
   Proof.
@@ -2966,12 +2886,7 @@ Section ABSTRACT_LIST_SCHEDULER.
     exists ps, m ! p = Some (i, ps) /\ PS.Empty ps.
   Proof. destruct m; intros. destruct H. eapply indep_nodes_in_tree0; eauto. Qed.
 
-
-
-
   Inductive schedule_invariant
-    (* (original: list instruction) (originaln := numlistgen original)
-    (scheduled: list (positive * instruction))  (remain: DPMap_t) *)
     (l: list instruction) (original: DPTree_t)
     (scheduled: list (positive * instruction)) (remain: DPTree_t)
     : Prop := 
@@ -2979,15 +2894,12 @@ Section ABSTRACT_LIST_SCHEDULER.
       (L2MAP: original = dep_tree_gen (numlistgen l))
       (EXCLUSIVE1: forall pi, List.In pi scheduled -> remain ! (fst pi) = None)
       (EXCLUSIVE2: forall pi ps, remain ! (fst pi) = Some (snd pi, ps) -> ~ List.In pi scheduled)
-      (SUBMAP: forall p i ps, remain ! p = Some (i, ps) -> In (p, i) (numlistgen l) ) (* TODO: subset relation *)
-        
-      (* (SUBLIST: forall pi i, List.In pi scheduled -> exists ps, PMap.get (fst pi) original = Some (i, ps) ) *)
+      (SUBMAP: forall p i ps, remain ! p = Some (i, ps) -> In (p, i) (numlistgen l) ) 
       (SUBLIST: incl scheduled (numlistgen l) )
-      (* (INCL: forall p i ps, PMap.get p original = Some (i, ps) -> 
-                PMap.get p remain = Some (i, ps) \/ List.In (p, i) scheduled) *)
       (NODUP: NoDup scheduled)
-      (* (SOUND: ) *)
-      (SORT': forall p1 i1 p2 i2 ps2 i, In (p1, i1) scheduled -> remain ! p2 = Some (i, ps2) ->
+      (COMPLETE: forall p1 i1 ps1 p2 i2 ps2, remain ! p1 = Some (i1, ps1) -> remain ! p2 = Some (i2, ps2) ->
+          HBR i2 i1 -> p2 < p1 -> PS.mem p2 ps1 = true )
+      (SORT': forall p1 i1 p2 i2 ps2, In (p1, i1) scheduled -> remain ! p2 = Some (i2, ps2) ->
                  ~ GenR HBR l (p2, i2) (p1, i1))
       (SORT: tsorted HBR l scheduled) 
       :
@@ -3000,7 +2912,6 @@ Section ABSTRACT_LIST_SCHEDULER.
   Proof.
     intros. apply sched_inv_intro.
     - auto.
-    (* - unfold original, dep_map_gen. simpl. eapply dep_map_default_none. *)
     - intros. destruct H.
     - intros. intro. destruct H0.
     - intros. Print "!". Print PTree.get'. 
@@ -3008,15 +2919,11 @@ Section ABSTRACT_LIST_SCHEDULER.
       apply in_rev.
       eapply dep_tree_in_list; eauto.
     - intro; intros. destruct H.
-    (* - intros; auto. *)
     - intros; auto. eapply NoDup_nil.
+    - intros. eapply dep_tree_complete; eauto. eapply dec_numlist_numlistgen; eauto.
     - intros. destruct H.
     - eapply topo_sorted_nil.
   Qed.
-
-  (* TODO: move to general lemmas *)
-  Lemma NoDup_swap: forall (A: Type) (l1 l2: list A), NoDup (l1 ++ l2) -> NoDup (l2++l1).
-  Proof. Admitted.
 
   Lemma schedule_1_invariant_preserve:
     forall prior l original scheduled remain scheduled' remain',
@@ -3026,8 +2933,6 @@ Section ABSTRACT_LIST_SCHEDULER.
   Proof.
     intros. inv H0. eapply sched_inv_intro.
     - auto.
-    (* AUX1 *)
-    (* - monadInv H. unfold remove_node; simpl; auto. *)
     (* EXCLUSIVE1 *)
     - monadInv H. intros. 
       eapply in_app_or in H; destruct H.
@@ -3053,26 +2958,36 @@ Section ABSTRACT_LIST_SCHEDULER.
       eapply NoDup_swap. eapply NoDup_cons; auto.
       eapply firstpick_sound in EQ; simpl. destruct x.
       edestruct indep_nodes_in_tree; eauto. destruct H. 
-      eapply EXCLUSIVE2; eauto.    
+      eapply EXCLUSIVE2; eauto.
+    (* COMPLETE *)
+    - intros. monadInv H. eapply firstpick_sound in EQ. destruct x as [xp xi]. simpl in *.
+      assert(TMP: xp <> p1 /\ xp <> p2 ). { split.
+        intro; subst. erewrite remove_get1 in H0; inv H0.
+        intro; subst. erewrite remove_get1 in H1; inv H1. } destruct TMP as [T1 T2].
+      assert(H0' := H0). assert(H1' := H1).
+      eapply remove_get3 in H0'; eauto. eapply remove_get3 in H1'; eauto.
+      destruct H0' as [ps1' []]. destruct H1' as [ps2' []].
+      assert(PS.mem p2 ps1' = true). { eapply COMPLETE; eauto. }
+      unfold remove_node in H0. erewrite PTree.gmap1 in H0. unfold option_map in H0.
+      erewrite PTree.gro in H0; eauto. erewrite H in H0. inv H0. eapply PS.remove_2; eauto.
     (* SORT' *)
     - intros. monadInv H. eapply in_app_or in H0. destruct H0.
       { edestruct remove_get3; eauto. destruct H0; eauto.  }
-      { inv H. simpl in H1. intro. 
+      { inv H. simpl in H1. 
         (* destruct pi1 as [p1 i1]. destruct pi2 as [p2 i2]; simpl in *. *)
-        inv H; simpl in *. eapply firstpick_sound in EQ.
-        admit.
-        destruct H0.   }
+        eapply firstpick_sound in EQ.
+        eapply indep_nodes_in_tree in EQ as [ps1' []].
+        eapply remove_get3 in H1 as [ps2' []].
 
+        intro. inv H3; simpl in *. assert(H6':= H6). 
+        eapply COMPLETE in H6'; eauto. eapply H0; eauto. 
+        destruct H0. }
     (* SORT *)
     - monadInv H. eapply topo_soerted_app; eauto. intros.
       destruct a as [p1 i1]. destruct x as [p2 i2]. simpl in *.
-      (* intro. inv H0.  *)
-      (* intro. destruct x, a. inv H0; simpl in *. *)
-       
-      eapply SORT'; eauto. eapply firstpick_sound in EQ.
-      admit. (* fine but need more lemmas on indep_nodes *)
-
-  Admitted.
+      eapply firstpick_sound in EQ. edestruct indep_nodes_in_tree; eauto. destruct H0.
+      eapply SORT'; eauto.
+  Qed.
 
   Lemma schedule_n_invariant_preserve:
     forall prior L l original scheduled remain scheduled' remain',
@@ -3154,15 +3069,15 @@ Check list_schedule'.
 
 
 
-
-
-
+(* Implementation of compiler pass under a flexible prioritizer from the outside world *)
 
 Require Import ExtrOcamlIntConv.
 
-(* scheduling heuristics from outside world *)
+(* Scheduling heuristics from outside world, will be realized in OCaml function *)
+    (* It does not affect the correctness of an algorithm *)
 Parameter prioritizer : list int -> int -> list (list int) -> int -> (list int).
 Locate FR.
+
 (* Encode different type of instructions (Risc-V) into integers to pass to outside heuristics  *)
 Definition inst2id (i: instruction): N := 
   match i with
