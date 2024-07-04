@@ -1144,6 +1144,7 @@ Definition try_swap_code:= try_swap happens_before.
 Definition try_swap_nth_func (n: nat)(f: function):= 
     mkfunction f.(fn_sig) f.(fn_stacksize) (try_swap_code n f.(fn_code)) .
 
+(* it is bad to name it "happens_before", but keep it for now *)
 Lemma happens_before_symmetric: 
   forall i1 i2, happens_before i1 i2 = happens_before i2 i1.
 Proof.
@@ -2603,121 +2604,6 @@ Section ABSTRACT_LIST_SCHEDULER.
   (* Definition dep_map_gen (nl: list (positive * instruction)) :=
     dep_map (List.rev nl). *)
 
-  
-
-  (* Lemma dep_map_default_none: forall nl, fst (dep_map nl) = None.
-  Proof. induction nl; simpl; auto. Qed. *)
-
-
-
-
-
-(* 
-  Inductive dec_numlist: list (positive*instruction) -> Prop :=
-  | dec_numlist_nil: dec_numlist []
-  | dec_numlist_cons: forall pi nl, dec_numlist nl ->
-      (forall pi', In pi' nl -> (fst pi') < (fst pi)) ->
-        dec_numlist (pi::nl)
-  . *)
-
-
-  (* Lemma dep_map_sound_prepare:
-  forall nl pi1 pi2 i ps, dec_numlist nl -> In pi1 nl -> In pi2 nl -> 
-  let M := dep_map nl in
-    PMap.get (fst pi1) M = Some (i, ps) -> (* pi1 depends on pi2 *)
-      PS.mem (fst pi2) ps = true ->
-        (fst pi2) < (fst pi1) /\ HBR (snd pi2) (snd pi1).
-    (* forall nl pi1 pi2 i ps, dec_numlist nl -> In pi1 nl -> In pi2 nl -> 
-    let M := dep_map nl in
-      PMap.get (fst pi1) M = Some (i, ps) ->
-        PS.mem (fst pi2) ps = true ->
-          (fst pi2) < (fst pi1). *)
-  Proof.
-    induction nl.
-    (* nil *)
-    - intros. simpl in H0. destruct H0.
-    (* l ++ [x] *)
-    - intros. 
-      simpl. simpl in H0, H1.
-      destruct H0, H1.
-      { subst.  (* should be exfalso *)
-        admit.
-      }
-      { subst. admit.
-
-      }
-      { subst.  (* should be exfalso *)
-        admit.
-
-      }
-      { unfold M in H2. simpl in H2. admit.
-
-      }
-      
-  
-  Admitted. *)
-
-
-
-  (* Lemma dep_map_sound':
-    forall l k pi1 pi2 i ps, In pi1 (numlistgen' l k) -> In pi2 (numlistgen' l k) -> 
-    let M := dep_map (List.rev (numlistgen' l k)) in
-      PMap.get (fst pi1) M = Some (i, ps) ->
-        PS.mem (fst pi2) ps = true ->
-          GenR' HBR l k pi2 pi1.
-  Proof.
-    intros. assert(fst pi2 < fst pi1 /\ HBR (snd pi2) (snd pi1)).
-    eapply dep_map_sound_prepare. 4: { eauto. }
-    admit.  (* fine *)
-    rewrite <- in_rev; auto. rewrite <- in_rev; auto. eauto. destruct H3.
-    eapply GenR_intro; eauto; simpl.
-    (* - eapply (proj1 dep_map_sound_prepare1). 4: { eauto. } 
-      admit.  (* fine *)
-      rewrite <- in_rev; auto. rewrite <- in_rev; auto.
-      eauto.
-    - unfold HBR. *)
-  Admitted. *)
-
-  (* Lemma dep_map_complete:
-  forall l k pi1 pi2,
-  let M := dep_map (List.rev (numlistgen' l k)) in
-    GenR' HBR l k pi1 pi2 ->
-    exists ps, PMap.get (fst pi1) M = Some (snd pi1, ps) /\ PS.mem (fst pi2) ps = true.
-  Proof.
-    (* induction l.
-    - admit.
-    - intros. inv H. *)
-
-    intros. inv H. destruct pi1 as [p1 i1]; simpl in H2, H3.
-    destruct pi2 as [p2 i2]; simpl in H2, H3. simpl.
-
-  Admitted. *)
-
-  (* Lemma dep_GenRb'_sound:
-    forall l k pi1 pi2, In pi1 (numlistgen' l k) -> In pi2 (numlistgen' l k) -> 
-      dep_GenRb' k l pi1 pi2 = true -> GenR' HBR l k pi1 pi2.
-  Proof.
-    intros. unfold dep_GenRb' in H1. destruct pi1 as [p1 i1]; simpl in H1.
-    remember ((dep_map (rev (numlistgen' l k))) !! p1) as b.
-    destruct b; symmetry in Heqb. 2: discriminate H1.
-    destruct p as [i1' ps]. destruct pi2 as [p2 i2]; simpl in H1.
-    eapply GenR_intro; eauto; simpl.
-    
- 
-    (* should be fine? *) 
-  Admitted.
-
-  Lemma dep_GenRb'_complete:
-    forall l i pi1 pi2, GenR' HBR l i pi1 pi2 -> dep_GenRb' i l pi1 pi2 = true.
-  Proof.
-    intros. inv H. unfold dep_GenRb'. destruct pi1 as [p1 i1]; simpl.
-    
-
-  Admitted. *)
-
-  (* Lemma dep_GenRb_sound:
-    forall l pi1 pi2, dep_GenRb l pi1 pi2 = true -> GenR HBR l pi1 pi2.
-  Proof. unfold dep_GenRb. intros. eapply dep_GenRb'_sound; eauto. Qed. *)
 
   Print List.rev.
 
@@ -2726,7 +2612,10 @@ Section ABSTRACT_LIST_SCHEDULER.
   (* Nodes that are independent, a.k.a ready to be scheduled in current dependence graph
         a node is empty indicates that it is independent
           and no other instrucion have to happens before it *)
-  Fixpoint indep_nodes'  (m : PTree.tree' (instruction * PS.t)) (i: positive) 
+
+
+  (* TODO: abort this definition and change to a simpler one *)
+  (* Fixpoint indep_nodes'  (m : PTree.tree' (instruction * PS.t)) (i: positive) 
     (k: list (positive * instruction)) {struct m}: list (positive * instruction) :=
     match m with
     | PTree.Node001 r => indep_nodes' r (xI i) k
@@ -2772,13 +2661,29 @@ Section ABSTRACT_LIST_SCHEDULER.
                       else (indep_nodes' r (xI i) k)
         | None => indep_nodes' l (xO i) k
         end *)
+    end. *)
+
+  Goal forall nl, PTree.elements (dep_tree nl) = nil.
+  intros. Check (PTree.elements (dep_tree nl)). Abort.
+
+  Definition ele_trans (x: positive * (instruction * PS.t)): positive * instruction :=
+    let (p, ips) := x in let (i, ps) := ips in (p, i).
+
+  Fixpoint indep_nodes0 (ll: list (positive * (instruction * PS.t))): list (positive * instruction):=
+    match ll with 
+    | nil => nil
+    | (p, (i, ps)) :: ll' => if PS.is_empty ps then (p, i) :: indep_nodes0 ll' 
+                             else indep_nodes0 ll' 
     end.
 
   Definition indep_nodes (m : DPTree_t): list (positive * instruction) := 
+    indep_nodes0 (PTree.elements m).
+
+  (* Definition indep_nodes (m : DPTree_t): list (positive * instruction) := 
     match m with 
     | PTree.Empty => nil 
     | PTree.Nodes m' => indep_nodes' m' xH nil 
-    end.
+    end. *)
 
   Print option_map.
 
@@ -2849,114 +2754,219 @@ Section ABSTRACT_LIST_SCHEDULER.
       end
     end.
 
-  Definition op_trans (po: positive * option (instruction * PS.t)): positive * instruction :=
-    let (p, o) := po in
-    match o with
-    | Some (i, ps) => (p, i)
-    | None => (p, Llabel 1) (* case that should never occur *)
-    end.
-  
-  Lemma dep_tree_sound:
-    forall nl p1 i1 p2 i2 i ps, dec_numlist nl ->
-    In (p1, i1) nl -> 
-      (dep_tree nl) ! p2 = Some (i, ps) -> PS.mem p1 ps = true ->
-          HBR i1 i2 -> p1 < p2.
-  Proof.
-
-  Admitted.
-  
-  
-  (* Lemma dep_map_sound:
-    forall nl p1 i1 p2 i2 i ps, dec_numlist nl ->
-    In (p1, i1) nl -> 
-      (dep_map nl) !! p2 = Some (i, ps) -> PS.mem p1 ps = true ->
-          HBR i1 i2 -> p1 < p2.
-  Proof.
-    intros. remember (dep_map nl) as M. destruct M.
-    unfold "!!" in H1; simpl in H1. Print PMap.set.
-    destruct (dep_map nl).
-
-  Admitted. *)
-
-
-  Lemma dep_tree_gen_in_list: 
-  forall nl p i ps, (dep_tree nl) ! p = Some (i, ps) -> In (p, i) nl.
-  Proof.
-
-  Admitted.
-
-
-  (* Lemma dep_map_gen_in_list: 
-    forall nl p i ps, (dep_map nl) !! p = Some (i, ps) -> In (p, i) nl.
+  Lemma dec_numlist_max: forall nl pi, dec_numlist (pi :: nl) -> 
+    forall pi', In pi' nl -> fst pi' < fst pi.
   Proof.
     induction nl.
-    - intros. simpl in H. unfold "!!" in H; simpl in H. inv H.
-    - intros. destruct a. simpl in H. Print "!!".
-    unfold "!!" in H; simpl in H.
-    remember (snd (dep_map nl)) as m. 
-    destruct m. Print PTree.get'.
-    { unfold "!", PTree.set in H. destruct (Pos.eq_dec p p0); subst.
-      { left. rewrite PTree.gss0 in H. inv H. auto. }
-      { right. rewrite PTree.gso0 in H; eauto. eapply IHnl.  
-        unfold "!!". rewrite <- Heqm. simpl; eauto. } }
-    { destruct (Pos.eq_dec p p0); subst.
-    { left. rewrite PTree.gss in H. inv H. auto. }
-    { right. rewrite PTree.gso in H; eauto. eapply IHnl.  
-      unfold "!!". rewrite <- Heqm. simpl; eauto. } }
-  Qed. *)
+    - intros. inv H0.
+    - intros. destruct H0; subst.
+      simpl in H. destruct pi, pi'. destruct H; simpl; auto. lia.
+      eapply IHnl; eauto. destruct nl. inv H0.
+      destruct pi, a, p. simpl in H. destruct H. destruct H1.
+      simpl. split; auto. lia.
+  Qed.
+
+  Lemma dec_numlist_app: forall nl pi, dec_numlist (pi :: nl) -> dec_numlist nl.
+  Proof.
+    induction nl.
+    - intros; simpl; auto.
+    - intros; simpl; auto. destruct pi. destruct a. destruct nl; simpl; auto.
+      simpl in H. destruct H; auto.
+  Qed.
+
+  Lemma in_num_nl: forall (nl: list (positive*instruction)) (p: positive),
+    In p (map fst nl) -> exists i, In (p, i) nl.
+  Proof.
+    induction nl; intros. simpl in H. destruct H.
+    simpl in H. destruct H.
+    { exists (snd a). destruct a. simpl in H. subst. simpl. left; auto. }
+    { edestruct IHnl. eauto. exists x; right; auto. }
+  Qed.
+
+  Lemma dec_numlist_nodupnum: forall nl, dec_numlist nl -> NoDupNum nl.
+  Proof.
+    induction nl.
+    - intros; unfold NoDupNum; simpl. eapply NoDup_nil.
+    - intros; unfold NoDupNum; simpl. eapply NoDup_cons.
+      intro. eapply in_num_nl in H0 as ?. destruct H1.
+      eapply dec_numlist_max in H; eauto. simpl in H. lia.
+      eapply dec_numlist_app in H. eapply IHnl in H. auto.
+  Qed.
+  
+  Lemma dec_numlist_nodup: forall nl, dec_numlist nl -> NoDup nl.
+  Proof. intros. eapply nodup_number_nodup. eapply dec_numlist_nodupnum. auto. Qed.
+
+
+
+  (** Properties of function dep_tree *)
+
+  Lemma dep_tree_in_list: 
+    forall nl p i ps, (dep_tree nl) ! p = Some (i, ps) -> In (p, i) nl.
+  Proof.
+    induction nl.
+    - intros. simpl in H. inv H.
+    - intros. destruct a. simpl in H. destruct (Pos.eq_dec p p0); subst.
+      erewrite PTree.gss in H. inv H. left; auto.
+      erewrite PTree.gso in H; eauto. right. eapply IHnl; eauto.
+  Qed.
+
+  Lemma dep_pset_sound: forall nl i p', PS.mem p' (dep_pset i nl) = true ->
+    exists i', In (p', i') nl /\ HBR i' i.
+  Proof.
+    induction nl.
+    - intros. simpl in H. inv H.
+    - intros. destruct a as [p0 i0]. simpl in H.
+      remember (i0 D~> i) as b. destruct b.
+      { destruct (Pos.eq_dec p' p0); subst.
+          erewrite PS.add_1 in H; eauto. exists i0. split. left; auto. hnf; auto.
+          eapply PS.add_3 in H; eauto. edestruct IHnl; eauto. exists x. destruct H0.
+          split; auto. right; auto. }
+      { edestruct IHnl; eauto. exists x. destruct H0; split; auto. right; auto. }
+  Qed.
+
+  Lemma dep_pset_complete: forall nl i p' i', In (p', i') nl /\ HBR i' i ->
+    PS.mem p' (dep_pset i nl) = true.
+  Proof.
+    induction nl.
+    - intros. destruct H. destruct H.
+    - intros. destruct H. destruct H; subst.
+      { remember (i' D~> i) as b. destruct b. simpl. rewrite <- Heqb. eapply PS.add_1; auto.
+        hnf in H0. rewrite H0 in Heqb. inv Heqb. }
+      { assert (In (p', i') nl /\ HBR i' i). split; auto. eapply IHnl in H1. destruct a; simpl. 
+        remember (i0 D~> i) as b. destruct b; auto. eapply PS.add_2; eauto.   }
+  Qed.
+
+  Lemma dep_tree_pset_in_list:
+    forall nl p i ps p', (dep_tree nl) ! p = Some (i, ps) ->
+      PS.mem p' ps = true -> exists i', In (p', i') nl.
+  Proof.
+    induction nl.
+    - intros. simpl in H. inv H.
+    - intros. destruct a. simpl in H. destruct (Pos.eq_dec p p0); subst.
+      { erewrite PTree.gss in H; eauto. inv H. eapply dep_pset_sound in H0.
+        destruct H0 as [i' []]. exists i'. right; auto. }
+      { erewrite PTree.gso in H; eauto. edestruct IHnl; eauto. exists x; right; auto. }
+  Qed.
+
+  Lemma dep_tree_sound:
+    forall nl p1 i1 ps1 p2 i2 ps2, dec_numlist nl ->
+    (* In (p1, i1) nl ->  *)
+    p1 <> p2 -> (dep_tree nl) ! p1 = Some (i1, ps1) ->
+      (dep_tree nl) ! p2 = Some (i2, ps2) -> PS.mem p1 ps2 = true ->
+          HBR i1 i2 -> p1 < p2.
+  Proof.
+    intros nl. induction nl. 
+    - intros. eapply dep_tree_in_list in H1 as ?. destruct H5.
+    - intros. destruct a as [pa ia]; simpl in H3. 
+      eapply dep_tree_in_list in H1 as ?. eapply dep_tree_in_list in H2 as ?.
+      destruct H5; destruct H6.
+      { inv H5; inv H6. exfalso; apply H0; auto.  }
+      { inv H5. simpl in H1, H2. erewrite PTree.gss in H1.
+        erewrite PTree.gso in H2; eauto. inv H1.
+        eapply dep_tree_pset_in_list in H3 as ?; eauto.
+        destruct H1 as [x]. exfalso. eapply dec_numlist_nodupnum in H.
+        unfold NoDupNum in H. simpl in H. eapply (in_map fst) in H1; eauto. simpl in H1.
+        inv H. eapply H8; auto. }
+      { inv H6. eapply dec_numlist_max in H; eauto. simpl in H; auto. }
+      { assert(p1 <> pa /\ p2 <> pa). { eapply dec_numlist_nodupnum in H. unfold NoDupNum in H; simpl in H. split.
+          - eapply (in_map fst) in H5; eauto. intro; subst. inv H. eapply H9; auto.
+          - eapply (in_map fst) in H6; eauto. intro; subst. inv H. eapply H9; auto. }
+        simpl in H1, H2. destruct H7. erewrite PTree.gso in H1, H2; eauto. 
+        eapply IHnl; eauto. eapply dec_numlist_app; eauto. } 
+  Qed.
+
+  Lemma dep_tree_complete:
+  forall nl p1 i1 p2 i2, dec_numlist nl ->
+    In (p1, i1) nl -> In (p2, i2) nl -> HBR i2 i1 -> p2 < p1 ->
+      exists ps1, (dep_tree nl) ! p1 = Some (i1, ps1) /\ PS.mem p2 ps1 = true.
+  Proof.
+    induction nl.
+    - intros. destruct H0.
+    - intros. destruct a as [pa ia]. destruct H0; destruct H1.
+      { inv H0; inv H1. lia. }
+      { inv H0. exists (dep_pset i1 nl). simpl. erewrite PTree.gss; eauto. split; auto.
+        eapply dep_pset_complete; eauto. }
+      { inv H1. exfalso. eapply dec_numlist_max in H; eauto. simpl in H. lia. }
+      { assert(p1 <> pa /\ p2 <> pa). { eapply dec_numlist_nodupnum in H. unfold NoDupNum in H; simpl in H. split.
+            - eapply (in_map fst) in H0; eauto. intro; subst. inv H. eapply H6; auto.
+            - eapply (in_map fst) in H1; eauto. intro; subst. inv H. eapply H6; auto. }
+        destruct H4. eapply dec_numlist_app in H. specialize (IHnl p1 i1 p2 i2 H H0 H1 H2 H3).
+        destruct IHnl as [ps1]. destruct H6. exists ps1. split; auto.
+        simpl. erewrite PTree.gso; eauto.  } 
+  Qed.
+
+
+  (** properties of function remove_node *)
 
   Lemma remove_get1: forall p (m: DPTree_t), (remove_node p m) ! p = None.
   Proof.
-    (* intros. unfold remove_node. unfold "!!", "!"; simpl. 
-    remember (PTree.map1 (remove_node0 p) (PTree.remove p (snd m))) as M.
-    destruct M; auto. destruct m as [m1 m2]; simpl. Check PTree.get' p t.
-    remember (PTree.get' p t) as G. destruct G; auto. simpl in HeqM.
-    assert(PTree.get p (PTree.Nodes t) = Some o). { unfold "!". auto. }
-    rewrite HeqM in H0. erewrite PTree.gmap1 in H0. 
-    unfold option_map in H0. erewrite PTree.grs in H0. inv H0.  *)
-  Admitted.
+    intros. unfold remove_node. erewrite PTree.gmap1.
+    unfold option_map. erewrite PTree.grs; auto.
+  Qed.
 
-  Lemma remove_get2: forall p p' (m: DPTree_t),
-    m ! p = None -> (remove_node p' m) ! p = None.
-  Proof. Admitted.
-
-  Lemma remove_get3: forall p p' i ps (m: DPTree_t),
-    (remove_node p' m) ! p = Some (i, ps) -> m ! p = Some (i, ps).
-  Proof. Admitted.
-
-
-(* 
-  Lemma indep_nodes_indep: forall t j nl p i,
-    In (p, i) (indep_nodes' t j nl) -> 
-      PTree.get' p t = (Some (i, PS.empty)).
+  Lemma remove_get2: forall p q (m: DPTree_t),
+    m ! p = None -> (remove_node q m) ! p = None.
   Proof.
+    intros. unfold remove_node. erewrite PTree.gmap1.
+    unfold option_map. destruct (Pos.eq_dec p q); subst.
+    - erewrite PTree.grs; auto.
+    - erewrite PTree.gro, H; auto.
+  Qed.
+
+  Lemma ps_remove_subset: forall t p, PS.Subset (PS.remove p t) t.
+  Proof. intros. unfold PS.Subset; intros.
+    destruct (Pos.eq_dec p a); subst. exfalso.
+    eapply PS.remove_1; eauto. eapply PS.remove_3; eauto.
+  Qed.
     
 
-  Admitted.
-
-
-
-  Lemma indep_nodes_property': forall t j nl p1 i1 p2 i2 ps2,
-    In (p1, i1) (indep_nodes' t j nl) -> 
-      PTree.get' p2 t = Some (Some (i2, ps2)) -> HBR i2 i1 -> p1 < p2.
+  Lemma remove_get3: forall p q i ps (m: DPTree_t),
+    (remove_node q m) ! p = Some (i, ps) ->
+      exists ps', m ! p = Some (i, ps') /\ PS.Subset ps ps'.
   Proof.
-    intros t. induction t.
-    - intros. Locate "~". simpl in H. unfold "~" in H.
+    intros. unfold remove_node in H. rewrite PTree.gmap1 in H.
+    unfold option_map in H. destruct (Pos.eq_dec p q); subst.
+    - erewrite PTree.grs in H. inv H.
+    - erewrite PTree.gro in H; auto. remember (m ! p) as o. destruct o.
+      { inv H. destruct p0; simpl. exists t; auto; split; auto.
+        eapply ps_remove_subset. }
+      { inv H. }
+  Qed.
+
+
+  (* Lemma indep_nodes'_in_tree: forall t p i x nl, In (p, i) (indep_nodes' t x nl) ->
+    exists ps, (PTree.Nodes t) ! p = Some (i, ps) /\ PS.Empty ps.
+  Proof.
+    induction t; intros; simpl in H.
+    - eapply IHt in H. destruct H as [ps []]. exists ps.
+      unfold PTree.get. unfold PTree.get'. simpl.
+  
+  
   Admitted. *)
 
-
-
-  (* Lemma indep_nodes_property: forall m p1 i1 p2 i2 ps2, fst m = None ->
-    In (p1, i1) (indep_nodes m) -> m !! p2 = Some (i2, ps2) -> HBR i2 i1 -> p1 < p2.
+  Lemma indep_nodes_in_tree00: forall ll p i, In (p, i) (indep_nodes0 ll) ->
+    exists ps, In (p, (i, ps)) ll /\ PS.Empty ps.
   Proof.
-    intros. Check (PTree.elements (snd m)). destruct m. destruct t. simpl in H0. destruct H0.
-    unfold indep_nodes in H0. simpl in H0.
-    unfold "!!" in H1; simpl in H1.
-    remember (PTree.Nodes t) ! p2 as x.
-    destruct x.
-    - unfold "!" in Heqx. subst. eapply indep_nodes_property'; eauto.
-    - simpl in H; subst. inv H1. 
-  Qed. *)
+    induction ll; intros. destruct H.
+    destruct a as [p1 [i1 ps1]]. simpl in H.
+    remember (PS.is_empty ps1) as b. destruct b.
+    { destruct H. inv H. exists ps1. split. left; auto. eapply PS.is_empty_spec; auto.
+      edestruct IHll; eauto. exists x; destruct H0; split; auto. right; auto. }
+    { edestruct IHll; eauto. exists x; destruct H0; split; auto. right; auto.  }
+  Qed.
+
+  Lemma indep_nodes_in_tree0: forall t p i, In (p, i) (indep_nodes0 (PTree.elements (PTree.Nodes t))) ->
+    exists ps, (PTree.Nodes t) ! p = Some (i, ps) /\ PS.Empty ps.
+  Proof. intros. eapply indep_nodes_in_tree00 in H. destruct H as [ps []]. exists ps.
+    eapply PTree.elements_complete in H. split; auto.
+  Qed.
+
+  (** Properties of function indep_nodes *)
+  Lemma indep_nodes_in_tree: forall m p i, In (p, i) (indep_nodes m) ->
+    exists ps, m ! p = Some (i, ps) /\ PS.Empty ps.
+  Proof. destruct m; intros. destruct H. eapply indep_nodes_in_tree0; eauto. Qed.
+
+
 
 
   Inductive schedule_invariant
@@ -2967,7 +2977,6 @@ Section ABSTRACT_LIST_SCHEDULER.
     : Prop := 
     | sched_inv_intro
       (L2MAP: original = dep_tree_gen (numlistgen l))
-      (* (AUX1: fst remain = None) *)
       (EXCLUSIVE1: forall pi, List.In pi scheduled -> remain ! (fst pi) = None)
       (EXCLUSIVE2: forall pi ps, remain ! (fst pi) = Some (snd pi, ps) -> ~ List.In pi scheduled)
       (SUBMAP: forall p i ps, remain ! p = Some (i, ps) -> In (p, i) (numlistgen l) ) (* TODO: subset relation *)
@@ -2977,12 +2986,10 @@ Section ABSTRACT_LIST_SCHEDULER.
       (* (INCL: forall p i ps, PMap.get p original = Some (i, ps) -> 
                 PMap.get p remain = Some (i, ps) \/ List.In (p, i) scheduled) *)
       (NODUP: NoDup scheduled)
-      (SORT': forall pi1 pi2 ps2 i, In pi1 scheduled -> remain ! (fst pi2) = Some (i, ps2) ->
-                 ~ GenR HBR l pi2 pi1)
+      (* (SOUND: ) *)
+      (SORT': forall p1 i1 p2 i2 ps2 i, In (p1, i1) scheduled -> remain ! p2 = Some (i, ps2) ->
+                 ~ GenR HBR l (p2, i2) (p1, i1))
       (SORT: tsorted HBR l scheduled) 
-      (* (SORT: forall p1 i1 p2 i2 ps2, List.In (p1, i1) scheduled ->  PMap.get p2 remain = Some (i2, ps2) ->
-               True )  *)
-               (* TODO *)
       :
       schedule_invariant l original scheduled remain
   .
@@ -2999,13 +3006,17 @@ Section ABSTRACT_LIST_SCHEDULER.
     - intros. Print "!". Print PTree.get'. 
       unfold dep_tree_gen in original.
       apply in_rev.
-      eapply dep_tree_gen_in_list; eauto. (* TODO *)
+      eapply dep_tree_in_list; eauto.
     - intro; intros. destruct H.
     (* - intros; auto. *)
     - intros; auto. eapply NoDup_nil.
     - intros. destruct H.
     - eapply topo_sorted_nil.
   Qed.
+
+  (* TODO: move to general lemmas *)
+  Lemma NoDup_swap: forall (A: Type) (l1 l2: list A), NoDup (l1 ++ l2) -> NoDup (l2++l1).
+  Proof. Admitted.
 
   Lemma schedule_1_invariant_preserve:
     forall prior l original scheduled remain scheduled' remain',
@@ -3030,39 +3041,35 @@ Section ABSTRACT_LIST_SCHEDULER.
       (* fine, need property about remove_node *)
       { inv H0. erewrite remove_get1 in H. inv H; destruct H1. destruct H1. }
     (* SUBMAP *)
-    - intros. monadInv H. eapply SUBMAP.
-      eapply remove_get3; eauto.
+    - intros. monadInv H.
+      edestruct remove_get3; eauto. destruct H. eapply SUBMAP; eauto. 
     (* SUBLIST *)
     - intros. monadInv H. intro; intros. eapply in_app_or in H.
-      destruct H. eapply SUBLIST; eauto.
-      inv H.  eapply firstpick_sound in EQ.
-      admit. (* fine, need property about indep_nodes  *)
+      destruct H. eapply SUBLIST; eauto. inv H. eapply firstpick_sound in EQ. destruct a. 
+      edestruct indep_nodes_in_tree; eauto. destruct H. eapply SUBMAP. eapply H.
       destruct H0.
     (* NODUP *)
     - monadInv H.
-      assert(NoDup_swap: forall (A: Type) (l1 l2: list A), NoDup (l1 ++ l2) -> NoDup (l2++l1)).
-      { admit. }
       eapply NoDup_swap. eapply NoDup_cons; auto.
-      eapply EXCLUSIVE2. destruct x. 
-      eapply firstpick_sound in EQ; simpl.
-      admit. (* fine, need more property about indep_nodes *)
-    
+      eapply firstpick_sound in EQ; simpl. destruct x.
+      edestruct indep_nodes_in_tree; eauto. destruct H. 
+      eapply EXCLUSIVE2; eauto.    
     (* SORT' *)
     - intros. monadInv H. eapply in_app_or in H0. destruct H0.
-      { eapply SORT'; auto. eapply remove_get3; eauto. }
-      { inv H. intro. destruct pi1 as [p1 i1]. destruct pi2 as [p2 i2]; simpl in *.
-        inv H; simpl in *.
-        eapply firstpick_sound in EQ. 
-        eapply remove_get3 in H1.
-        
+      { edestruct remove_get3; eauto. destruct H0; eauto.  }
+      { inv H. simpl in H1. intro. 
+        (* destruct pi1 as [p1 i1]. destruct pi2 as [p2 i2]; simpl in *. *)
+        inv H; simpl in *. eapply firstpick_sound in EQ.
         admit.
         destruct H0.   }
 
     (* SORT *)
     - monadInv H. eapply topo_soerted_app; eauto. intros.
+      destruct a as [p1 i1]. destruct x as [p2 i2]. simpl in *.
+      (* intro. inv H0.  *)
       (* intro. destruct x, a. inv H0; simpl in *. *)
        
-      eapply SORT'; eauto.
+      eapply SORT'; eauto. eapply firstpick_sound in EQ.
       admit. (* fine but need more lemmas on indep_nodes *)
 
   Admitted.
