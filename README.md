@@ -6,8 +6,6 @@ This is an instruction on how to evaluate the artifact of our project in our pap
 
 
 
-
-
 # Environment Configuration
 
 ### System requirement
@@ -16,20 +14,21 @@ This is an instruction on how to evaluate the artifact of our project in our pap
 
 **Dependencies for mechanized proof**
 
-coq            8.15.0      version 8.15.0
+- **coq**, version 8.15.0 
 
-menhir         20220210    An LR(1) parser generator
+- **menhir**, version 20220210, An LR(1) parser generator
 
 **Dependencies for generating an executable files**
 
-ocaml  				4.14.0      The OCaml compiler (virtual package)
-ctypes         		0.20.1      Combinators for binding to C libraries without writing any C
-ctypes-foreign   0.18.0      Virtual package for enabling the ctypes.foreign subpackage
-dune           		3.13.0      Fast, portable, and opinionated build system
+- **ocaml**, version 4.14.0, the OCaml compiler (virtual package)
+- **ctypes**, version 0.20.1, combinators for binding to C libraries without writing any C
+- **ctypes-foreign**, version 0.18.0, virtual package for enabling the ctypes.foreign subpackage
+- **dune**, version 3.13.0, fast, portable, and opinionated build system
 
 **Dependencies for experiments**:
 
-- **Hardware:** Risc-V machine
+- **Hardware:** an in-order Risc-V machine architecture (e.g. SiFive U74)
+- **Software: **no additional software requirements to run the experiments
 
 
 
@@ -59,7 +58,7 @@ opam install ocaml=4.14.0 ctypes=0.20.1 ctypes-foreign=0.18.0 dune=3.13.0
 
 **Step 2: build both the proofs and executable files**
 
-1. Clone our project file at your local machine
+1. Clone [our project](https://github.com/Youngzt998/CompCertDev) file at your local machine
 
 2. At the root path,  run the configure script
 
