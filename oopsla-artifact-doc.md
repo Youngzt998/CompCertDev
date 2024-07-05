@@ -6,8 +6,6 @@ This is an instruction on how to evaluate the artifact of our project in our pap
 
 
 
-
-
 # Environment Configuration
 
 ### System requirement
@@ -16,20 +14,21 @@ This is an instruction on how to evaluate the artifact of our project in our pap
 
 **Dependencies for mechanized proof**
 
-coq            8.15.0      version 8.15.0
+- **coq**, version 8.15.0 
 
-menhir         20220210    An LR(1) parser generator
+- **menhir**, version 20220210, An LR(1) parser generator
 
-**Dependencies for generating an executable files **
+**Dependencies for generating an executable files**
 
-ocaml  				4.14.0      The OCaml compiler (virtual package)
-ctypes         		0.20.1      Combinators for binding to C libraries without writing any C
-ctypes-foreign   0.18.0      Virtual package for enabling the ctypes.foreign subpackage
-dune           		3.13.0      Fast, portable, and opinionated build system
+- **ocaml**, version 4.14.0, the OCaml compiler (virtual package)
+- **ctypes**, version 0.20.1, combinators for binding to C libraries without writing any C
+- **ctypes-foreign**, version 0.18.0, virtual package for enabling the ctypes.foreign subpackage
+- **dune**, version 3.13.0, fast, portable, and opinionated build system
 
-**Dependencies for experiments** : TODO
+**Dependencies for experiments**:
 
-- **Hardware:** Risc-V machine
+- **Hardware:** an <u>in-order Risc-V</u> machine architecture (e.g. SiFive U74)
+- **Software: **no additional software requirements to run the experiments
 
 
 
@@ -45,7 +44,7 @@ dune           		3.13.0      Fast, portable, and opinionated build system
 opam install coq=8.15.0 menhir=20220210 
 ```
 
-​		Theses ensure the you can check our formal proofs 
+​		Theses ensure that you can check our formal proofs 
 
 3. Install all the dependencies of generating executable file of the compiler
 
@@ -57,9 +56,14 @@ opam install ocaml=4.14.0 ctypes=0.20.1 ctypes-foreign=0.18.0 dune=3.13.0
 
 4. Install all the dependences of running experiments: TODO
 
-**Step 2: build both the proofs and executable files **
+**Step 2: build both the proofs and executable files**
 
-1. Clone our project file at your local machine
+1. Clone [our project](https://github.com/Youngzt998/CompCertDev) file at your local machine, and switch to branch dune-ffi
+
+   ```
+   git clone git@github.com:Youngzt998/CompCertDev.git
+   git checkout dune-ffi
+   ```
 
 2. At the root path,  run the configure script
 
@@ -77,28 +81,49 @@ opam install ocaml=4.14.0 ctypes=0.20.1 ctypes-foreign=0.18.0 dune=3.13.0
    make all
    ```
 
-   or parallel build it by
+   or parallel build on an N-core machine it by
 
    ```
    make -j N all
    ```
 
-   This takes almost the same building process as the original CompCert, i,e, it checks all the Coq proofs, then extracts Caml code from the Coq specification and combines it with supporting hand-written Caml code to generate the executable for CompCert.
+   This takes almost the same building process as the original CompCert, i,e, it checks all the Coq proofs, then extracts OCaml code from the Coq specification and combines it with supporting hand-written Caml code to generate the executable for CompCert. The *.ml files will be linked successfully and generating the executable files.
 
-   If you see some error message mentioning version problem after successfully generating *.ml files after building the Coq files, run the following command
+   An expected error message could occur at the end of making, <u>if you are not building the system on Risc-V machine</u>:
+
+   ```
+   gcc: error: unrecognized argument in option ‘-mabi=lp64d’
+   make[2]: *** [i64_stof.o] Error 2
+   gcc: note: valid arguments to ‘-mabi=’ are: ms sysv
+   ccomp: error: preprocessor command failed with exit code 1 (use -v to see invocation)
+   
+   1 error detected.
+   Makefile:65: recipe for target 'i64_udivmod.o' failed
+   make[2]: *** [i64_udivmod.o] Error 2
+   make[2]: Leaving directory '/home/zyang638/coq-compcert-variants/test/CompCertDev/runtime'
+   Makefile:226: recipe for target 'runtime' failed
+   make[1]: *** [runtime] Error 2
+   make[1]: Leaving directory '/home/zyang638/coq-compcert-variants/test/CompCertDev'
+   Makefile:181: recipe for target 'all' failed
+   make: *** [all] Error 2
+   ```
+
+   This means you have generated an executable compiler program targeting Risc-V, but it fails initial tests on a none-Risc-V machine. It will not influence the evaluation on mechanized proofs. However, the experiments part will not be able to run.
+
+   
+
+   If you ever run *make clean* after the first building, make sure to run the following command before re-building the projects to avoid a version issue.
 
    ```
    make -f Makefile.extr clean
    make
    ```
 
-   And the *.ml files will be linked successfully and generating the executable files
+   
 
 4. Check the generated compiler executable file ***ccomp*** at the root path of the project file. This is the compiler we used to run the performance evaluation.
 
-**Step 4: Run our experiments **
-
-TODO.
+**Step 4: Run our experiments**：in the final section
 
 
 
@@ -114,11 +139,11 @@ The whole project was developed based on CompCert-3.12. The following files belo
 
 - **Scheduling heuristics:** 
 
-  <u>*./my/Prioritizer.ml*</u> 		the heuristic function in OCaml, that used a C function to compute the priority of scheduling, and was used by instruction scheduling passes in Coq
+  <u>*./my/Prioritizer.ml*</u>	is the heuristic function in OCaml, that used a C function to compute the priority of scheduling, and was used by instruction scheduling passes in Coq
 
-  ./my/oracle_sched.c	the heuristic function in C to compute the priority of scheduling
+  ./my/oracle_sched.c is the heuristic function in C to compute the priority of scheduling
 
-​	    ./my/ORACLE_SCHED.md 		documentation on how scheduling heuristics work
+​	    ./my/ORACLE_SCHED.md is the documentation on how scheduling heuristics work
 
 ### Proof structures
 
@@ -181,8 +206,6 @@ The mechanized proof in file *<u>backend/Scheduling.v</u>* consists of the follo
 Our artifact contains 100% mechanized proof of all the theorems in our paper. There is no unfinished proofs. The proof is based on the original CompCert (version 3.12), and does not involves any new axioms/assumptions. It has exact the same trust base as the original CompCert's framework.
 
 ***Notes:** linking is not currently supported, which is also not in the result of our paper. The theorems we implemented only guarantee the whole compiler correctness.* 
-
-
 
 
 
@@ -470,7 +493,7 @@ Qed.
 
 # Run our experiments
 
-TODOIn the performance experiments in Section 8.2, we used two versions of the CompCert compiler.
+In the performance experiments in Section 8.2, we used two versions of the CompCert compiler.
 * Baseline: Original CompCert version 3.13.1
   * https://github.com/AbsInt/CompCert/tree/3.13
 * Our work: This repository
@@ -480,18 +503,19 @@ Set the following two environmental variables to specify the baseline and our re
 ```shell
    export COMPCERT_HOME_BASE=$OOPSLA24_AE_HOME/CompCert
    export COMPCERT_HOME_SCHE=$OOPSLA24_AE_HOME/CompCertDev 
-   ```
+```
 
 Move to the following directory under `$COMPCERT_HOME_SCHE` (i.e., this repository) which contains all benchmark codes and compilation script.
 ```shell
    cd $COMPCERT_HOME_SCHE/test/c/PolyBenchC-4.2.1/oopsla24_expr/
-   ```
+```
 ## Compilation
 To compile the benchmark programs, use `compile.sh` shell script that generates two versions of binaries compiled by the baseline and our version of CompCert.
 The following command compiles all the benchmarks and shows the compilation times in seconds.
+
 ```shell
    ./compile.sh *.c
-   ```
+```
 
 An example output is shown below, where `2mm.pluto.kernel.c` benchmark is compiled.
 ```shell
@@ -512,12 +536,13 @@ An example output is shown below, where `2mm.pluto.kernel.c` benchmark is compil
    2.96user 0.16system 0:03.19elapsed 98%CPU (0avgtext+0avgdata 72040maxresident)k
    8inputs+9248outputs (0major+17865minor)pagefaults 0swaps
    Binary gen: 2mm.pluto.kernel.c for sche
-   ```
+```
 
 ## Run
 After the above step, there are two binaries generated for each input benchmark, e.g., `2mm.pluto.base` and `2mm.pluto.sche` for `2mm.pluto.kernel.c` benchmark, respectively corresponding to the baseline version CompCert 3.13.1 and our version with instruction scheduling for a RISC-V in-order processor.
 ```shell
    ./2mm.pluto.base >& 2mm_base_output.txt
    ./2mm.pluto.sche >& 2mm_sche_output.txt
-   ```
+```
 The executed output shows the kernel execution time in seconds and computation results.
+
