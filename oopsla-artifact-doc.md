@@ -152,7 +152,7 @@ Set the following two environmental variables to specify the baseline and our re
    export COMPCERT_HOME_SCHE=$OOPSLA24_AE_HOME/CompCertDev 
    ```
 
-Move to the directory under $COMPCERT_HOME_SCHE (i.e., this repository) which contains all benchmark codes and compilation script.
+Move to the directory under `$COMPCERT_HOME_SCHE` (i.e., this repository) which contains all benchmark codes and compilation script.
 ```shell
    cd $COMPCERT_HOME_SCHE/test/c/PolyBenchC-4.2.1/oopsla24_expr/
    ```
