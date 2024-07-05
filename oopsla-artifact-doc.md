@@ -146,7 +146,7 @@ In the performance experiments in Section 8.2, we used two versions of CompCert 
 * Our work: This repository
 
 ## Preparation
-Set the following two environmental variables to specify the baseline and our repository. Assuming baseline and this repositories are respectively named as `CompCert` and `CompCertDev`, we can set them as follows:
+Set the following two environmental variables to specify the baseline and our repository. Assuming baseline and this repositories are located in the home directory `$HOME` and respectively named as `CompCert` and `CompCertDev`, we can set them as follows:
 ```shell
    export COMPCERT_HOME_BASE=$HOME/CompCert
    export COMPCERT_HOME_SCHE=$HOME/CompCertDev 
