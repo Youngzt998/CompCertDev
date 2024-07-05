@@ -4,6 +4,10 @@
 
 This is an instruction on how to evaluate the artifact of our project in our paper *Fully Verified Instruction Scheduling: a lightweight and flexible approach*.
 
+The artifacts consists of two parts: mechanized proofs and performance experiments. Evaluating the mechanized proofs only requires software dependencies on Linux machine and the use of proof assistant Coq.  Evaluating the experiments requires an in-order Risc-V hardware.
+
+This documentations contains step-by-step building guides and a detailed paper-to-artifact correspondence guide that matches every lemma/theorems in our submitted paper with the mechanized proofs.
+
 
 
 # Environment Configuration
