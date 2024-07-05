@@ -28,7 +28,7 @@ This is an instruction on how to evaluate the artifact of our project in our pap
 **Dependencies for experiments**:
 
 - **Hardware:** an in-order Risc-V machine architecture (e.g. SiFive U74)
-- **Software: **no additional software requirements to run the experiments
+- **Software:** no additional software requirements to run the experiments
 
 
 
@@ -185,7 +185,7 @@ Our artifact contains 100% mechanized proof of all the theorems in our paper. Th
 
 #### a. Scheduler codes in Coq
 
-You may locate the functions corresponding ***Algorithm 2.*** in our paper at Section ABSTRACT_LIST_SCHEDULER by locating the following defininition:
+You may locate the functions corresponding ***Algorithm 2.*** in our paper at Section ABSTRACT_LIST_SCHEDULER by locating the following definition:
 
 ```
 Variable prioritizer: list instruction -> list positive.
@@ -409,7 +409,7 @@ Lemma transf_program_single_swap_forward_simulation:
     	forward_simulation (Linear.semantics prog) (Linear.semantics tprog).
 ```
 
-***Lemma 8.*** (Any valid instruction scheduler preserved forward simulation relarion). at section ABSTRACT_SCHEDULER
+***Lemma 8.*** (Any valid instruction scheduler preserved forward simulation relation). at section ABSTRACT_SCHEDULER
 
 ```
 Theorem schedule_program_forward_simulation:
