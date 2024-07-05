@@ -20,7 +20,7 @@ coq            8.15.0      version 8.15.0
 
 menhir         20220210    An LR(1) parser generator
 
-**Dependencies for generating an executable files **
+**Dependencies for generating an executable files**
 
 ocaml  				4.14.0      The OCaml compiler (virtual package)
 ctypes         		0.20.1      Combinators for binding to C libraries without writing any C
@@ -57,7 +57,7 @@ opam install ocaml=4.14.0 ctypes=0.20.1 ctypes-foreign=0.18.0 dune=3.13.0
 
 4. Install all the dependences of running experiments: TODO
 
-**Step 2: build both the proofs and executable files **
+**Step 2: build both the proofs and executable files**
 
 1. Clone our project file at your local machine
 
@@ -96,9 +96,7 @@ opam install ocaml=4.14.0 ctypes=0.20.1 ctypes-foreign=0.18.0 dune=3.13.0
 
 4. Check the generated compiler executable file ***ccomp*** at the root path of the project file. This is the compiler we used to run the performance evaluation.
 
-**Step 4: Run our experiments **
-
-TODO.
+**Step 4: Run our experiments**：in the final section
 
 
 
@@ -114,11 +112,11 @@ The whole project was developed based on CompCert-3.12. The following files belo
 
 - **Scheduling heuristics:** 
 
-  <u>*./my/Prioritizer.ml*</u> 		the heuristic function in OCaml, that used a C function to compute the priority of scheduling, and was used by instruction scheduling passes in Coq
+  <u>*./my/Prioritizer.ml*</u>	is the heuristic function in OCaml, that used a C function to compute the priority of scheduling, and was used by instruction scheduling passes in Coq
 
-  ./my/oracle_sched.c	the heuristic function in C to compute the priority of scheduling
+  ./my/oracle_sched.c is the heuristic function in C to compute the priority of scheduling
 
-​	    ./my/ORACLE_SCHED.md 		documentation on how scheduling heuristics work
+​	    ./my/ORACLE_SCHED.md is the documentation on how scheduling heuristics work
 
 ### Proof structures
 
@@ -181,8 +179,6 @@ The mechanized proof in file *<u>backend/Scheduling.v</u>* consists of the follo
 Our artifact contains 100% mechanized proof of all the theorems in our paper. There is no unfinished proofs. The proof is based on the original CompCert (version 3.12), and does not involves any new axioms/assumptions. It has exact the same trust base as the original CompCert's framework.
 
 ***Notes:** linking is not currently supported, which is also not in the result of our paper. The theorems we implemented only guarantee the whole compiler correctness.* 
-
-
 
 
 
