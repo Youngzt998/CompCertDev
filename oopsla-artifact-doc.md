@@ -185,8 +185,9 @@ An example output is shown below, where `2mm.pluto.kernel.c` benchmark is compil
    ```
 
 ## Run
-After the above step, there are two binaries generated for each input benchmark, e.g., `2mm.pluto.base` and `2mm.pluto.sche`.
+After the above step, there are two binaries generated for each input benchmark, e.g., `2mm.pluto.base` and `2mm.pluto.sche`, corresponding to the baseline version CompCert 3.13.1 and our version with instruction scheduling for a RISC-V in-order processor.
 ```shell
    ./2mm.pluto.base >& 2mm_base_output.txt
+   ./2mm.pluto.sche >& 2mm_sche_output.txt
    ```
 The executed output shows the kernel execution time in second and computation results.
