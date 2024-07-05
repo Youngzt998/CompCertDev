@@ -27,7 +27,7 @@ ctypes         		0.20.1      Combinators for binding to C libraries without writ
 ctypes-foreign   0.18.0      Virtual package for enabling the ctypes.foreign subpackage
 dune           		3.13.0      Fast, portable, and opinionated build system
 
-**Dependencies for experiments** : TODO
+**Dependencies for experiments**:
 
 - **Hardware:** Risc-V machine
 
@@ -470,5 +470,66 @@ Qed.
 
 # Run our experiments
 
-TODO
+In the performance experiments in Section 8.2, we used two versions of the CompCert compiler.
+
+* Baseline: Original CompCert version 3.13.1
+  * https://github.com/AbsInt/CompCert/tree/3.13
+* Our work: This repository
+
+## Preparation
+
+Set the following two environmental variables to specify the baseline and our repository. Assuming they are located in directory `$OOPSLA24_AE_HOME` and respectively named as `CompCert` and `CompCertDev`, we can set them as follows:
+
+```shell
+   export COMPCERT_HOME_BASE=$OOPSLA24_AE_HOME/CompCert
+   export COMPCERT_HOME_SCHE=$OOPSLA24_AE_HOME/CompCertDev 
+```
+
+Move to the following directory under `$COMPCERT_HOME_SCHE` (i.e., this repository) which contains all benchmark codes and compilation script.
+
+```shell
+   cd $COMPCERT_HOME_SCHE/test/c/PolyBenchC-4.2.1/oopsla24_expr/
+```
+
+## Compilation
+
+To compile the benchmark programs, use `compile.sh` shell script that generates two versions of binaries compiled by the baseline and our version of CompCert.
+The following command compiles all the benchmarks and shows the compilation times in seconds.
+
+```shell
+   ./compile.sh *.c
+```
+
+An example output is shown below, where `2mm.pluto.kernel.c` benchmark is compiled.
+
+```shell
+   ./compile.sh 2mm.pluto.kernel.c 
+   Kernel compilation time measurements: 2mm.pluto.kernel.c for base (repeat 3 times)
+   0.88user 0.31system 0:01.48elapsed 80%CPU (0avgtext+0avgdata 20624maxresident)k
+   16104inputs+32outputs (95major+5087minor)pagefaults 0swaps
+   0.87user 0.12system 0:01.01elapsed 98%CPU (0avgtext+0avgdata 20620maxresident)k
+   8inputs+32outputs (0major+5131minor)pagefaults 0swaps
+   0.88user 0.11system 0:01.02elapsed 97%CPU (0avgtext+0avgdata 20648maxresident)k
+   8inputs+32outputs (0major+5131minor)pagefaults 0swaps
+   Binary gen: 2mm.pluto.kernel.c for base
+   Kernel compilation time measurements: 2mm.pluto.kernel.c for sche (repeat 3 times)
+   2.74user 0.45system 0:03.82elapsed 83%CPU (0avgtext+0avgdata 72040maxresident)k
+   16992inputs+9248outputs (100major+17821minor)pagefaults 0swaps
+   2.81user 0.25system 0:03.13elapsed 98%CPU (0avgtext+0avgdata 71908maxresident)k
+   8inputs+9248outputs (0major+17870minor)pagefaults 0swaps
+   2.96user 0.16system 0:03.19elapsed 98%CPU (0avgtext+0avgdata 72040maxresident)k
+   8inputs+9248outputs (0major+17865minor)pagefaults 0swaps
+   Binary gen: 2mm.pluto.kernel.c for sche
+```
+
+## Run
+
+After the above step, there are two binaries generated for each input benchmark, e.g., `2mm.pluto.base` and `2mm.pluto.sche` for `2mm.pluto.kernel.c` benchmark, respectively corresponding to the baseline version CompCert 3.13.1 and our version with instruction scheduling for a RISC-V in-order processor.
+
+```shell
+   ./2mm.pluto.base >& 2mm_base_output.txt
+   ./2mm.pluto.sche >& 2mm_sche_output.txt
+```
+
+The executed output shows the kernel execution time in seconds and computation results.
 
