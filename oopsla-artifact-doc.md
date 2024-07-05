@@ -140,13 +140,13 @@ Our artifact should contains 100% mechanized proof of all the theorems in our pa
 
 # Run our experiments
 
-In the performance experiments in Section 8.2, we used two versions of CompCert compiler.
+In the performance experiments in Section 8.2, we used two versions of the CompCert compiler.
 * Baseline: Original CompCert version 3.13.1
   * https://github.com/AbsInt/CompCert/tree/3.13
 * Our work: This repository
 
 ## Preparation
-Set the following two environmental variables to specify the baseline and our repository. Assuming baseline and this repositories are located in directory `$OOPSLA24_AE_HOME` and respectively named as `CompCert` and `CompCertDev`, we can set them as follows:
+Set the following two environmental variables to specify the baseline and our repository. Assuming baseline and this repository are located in directory `$OOPSLA24_AE_HOME` and respectively named as `CompCert` and `CompCertDev`, we can set them as follows:
 ```shell
    export COMPCERT_HOME_BASE=$OOPSLA24_AE_HOME/CompCert
    export COMPCERT_HOME_SCHE=$OOPSLA24_AE_HOME/CompCertDev 
@@ -158,7 +158,7 @@ Move to the following directory under `$COMPCERT_HOME_SCHE` (i.e., this reposito
    ```
 ## Compilation
 To compile the benchmark programs, use `compile.sh` shell script that generates two versions of binaries compiled by the baseline and our version of CompCert.
-The following command compiles all the benchmarks and shows the compilation times in second.
+The following command compiles all the benchmarks and shows the compilation times in seconds.
 ```shell
    ./compile.sh *.c
    ```
@@ -190,4 +190,4 @@ After the above step, there are two binaries generated for each input benchmark,
    ./2mm.pluto.base >& 2mm_base_output.txt
    ./2mm.pluto.sche >& 2mm_sche_output.txt
    ```
-The executed output shows the kernel execution time in second and computation results.
+The executed output shows the kernel execution time in seconds and computation results.
