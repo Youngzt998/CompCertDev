@@ -146,7 +146,7 @@ In the performance experiments in Section 8.2, we used two versions of the CompC
 * Our work: This repository
 
 ## Preparation
-Set the following two environmental variables to specify the baseline and our repository. Assuming baseline and this repository are located in directory `$OOPSLA24_AE_HOME` and respectively named as `CompCert` and `CompCertDev`, we can set them as follows:
+Set the following two environmental variables to specify the baseline and our repository. Assuming they are located in directory `$OOPSLA24_AE_HOME` and respectively named as `CompCert` and `CompCertDev`, we can set them as follows:
 ```shell
    export COMPCERT_HOME_BASE=$OOPSLA24_AE_HOME/CompCert
    export COMPCERT_HOME_SCHE=$OOPSLA24_AE_HOME/CompCertDev 
