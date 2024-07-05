@@ -146,7 +146,7 @@ In the performance experiments in Section 8.2, we used two versions of CompCert 
 * Our work: This repository
 
 ## Preparation
-Set the following two environmental variables respectively to specify the baseline and our repository, for instance:
+Set the following two environmental variables to specify the baseline and our repository. Assuming baseline and this repositories are respectively named as `CompCert` and `CompCertDev`, we can set them as follows:
 ```shell
    export COMPCERT_HOME_BASE=$HOME/CompCert
    export COMPCERT_HOME_SCHE=$HOME/CompCertDev 
@@ -154,7 +154,7 @@ Set the following two environmental variables respectively to specify the baseli
 
 Move to the directory that contains all benchmark codes and compilation script.
 ```shell
-   cd test/c/PolyBenchC-4.2.1/oopsla24_expr/
+   cd CompCertDev/test/c/PolyBenchC-4.2.1/oopsla24_expr/
    ```
 ## Compilation
 To compile the benchmark programs, use `compile.sh` shell script that generates two versions of binaries compiled by the baseline and our version of CompCert.
