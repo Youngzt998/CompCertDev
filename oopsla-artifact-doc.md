@@ -1,12 +1,18 @@
+[TOC]
+
 # Overview
 
-This is an instruction on how to evaluate the result of our project in our paper *Fully Verified Instruction Scheduling: a lightweight and flexible approach*.
+This is an instruction on how to evaluate the artifact of our project in our paper *Fully Verified Instruction Scheduling: a lightweight and flexible approach*.
+
+
 
 
 
 # Environment Configuration
 
 ### System requirement
+
+**Hosting OS**: only tested on Linux machine
 
 **Dependencies for mechanized proof**
 
@@ -27,8 +33,6 @@ dune           		3.13.0      Fast, portable, and opinionated build system
 
 
 
-
-
 ### Build the system
 
 **Step 1: install dependencies**
@@ -41,19 +45,21 @@ dune           		3.13.0      Fast, portable, and opinionated build system
 opam install coq=8.15.0 menhir=20220210 
 ```
 
+​		Theses ensure the you can check our formal proofs 
+
 3. Install all the dependencies of generating executable file of the compiler
 
 ```shell
-opam install ocaml=4.14.0 ctypes.0.20.1 ctypes-foreign.0.18.0 dune.3.13.0
+opam install ocaml=4.14.0 ctypes=0.20.1 ctypes-foreign=0.18.0 dune=3.13.0
 ```
+
+​		These ensures generating the final executable files successfully
 
 4. Install all the dependences of running experiments: TODO
 
-
-
 **Step 2: build both the proofs and executable files **
 
-1. Clone our project file
+1. Clone our project file at your local machine
 
 2. At the root path,  run the configure script
 
@@ -61,7 +67,9 @@ opam install ocaml=4.14.0 ctypes.0.20.1 ctypes-foreign.0.18.0 dune.3.13.0
    ./configure rv64-linux
    ```
 
-   *Note: while this is the same configuration command as the original CompCert, other machine architecture is not supported in this artifact*
+   *Note 1: while this is the same configuration command as the original CompCert, other machine architecture is not supported in this artifact*
+
+   *Note 2: you may run this configure on a different architecture like x86 and can still check the proof part and build an executable file, but the generated compiler cannot run as normal or be used for experiments*
 
 3. Build the system by issuing the command
 
@@ -77,7 +85,16 @@ opam install ocaml=4.14.0 ctypes.0.20.1 ctypes-foreign.0.18.0 dune.3.13.0
 
    This takes almost the same building process as the original CompCert, i,e, it checks all the Coq proofs, then extracts Caml code from the Coq specification and combines it with supporting hand-written Caml code to generate the executable for CompCert.
 
-4. Check the generated compiler executable file *ccomp* at the root path of the project file. This is the compiler we used to run the performance evaluation.
+   If you see some error message mentioning version problem after successfully generating *.ml files after building the Coq files, run the following command
+
+   ```
+   make -f Makefile.extr clean
+   make
+   ```
+
+   And the *.ml files will be linked successfully and generating the executable files
+
+4. Check the generated compiler executable file ***ccomp*** at the root path of the project file. This is the compiler we used to run the performance evaluation.
 
 **Step 4: Run our experiments **
 
@@ -85,13 +102,15 @@ TODO.
 
 
 
-# Functions and lemmas in the paper
+# Mechanized Proofs in the Paper
 
 This section provides reference of all the algorithms, lemmas and theorems implemented in our paper.
 
-### Related files
+### Project files
 
-- **Mechanized proof:** All the lemmas and theorems implemented in this paper was collected in a single file *<u>backend/Scheduling.v</u>*. To evaluate the result of our mechanized proof, open the project in some IDE (e.g. VSCode) after installing and building the proof through the makefile.
+The whole project was developed based on CompCert-3.12. The following files belongs to this research paper
+
+- **Mechanized proofs:** All the lemmas and theorems implemented in this paper was collected in a single file *<u>backend/Scheduling.v</u>*. To evaluate the result of our mechanized proof, open the project in some IDE (e.g. VSCode) after installing and building the proof through the makefile.
 
 - **Scheduling heuristics:** 
 
@@ -103,30 +122,63 @@ This section provides reference of all the algorithms, lemmas and theorems imple
 
 ### Proof structures
 
-- line 46~765:  Properties on abstract topo-logical sort
-- line 768~826: additional properties on general framework
-- line 832~868: machine dependent proofs (Risv-V)
-- line 870~910: machine dependent proofs (x86_64), commented
-- line 912~1523: lemmas about the intermediate language Linear that we used to do instruction scheduling
-- line 1525~2221: lemmas about semantics preservation after only swapping one pair of adjacent independent instructions inside only one function block
-- line 2224~2282: lemmas about composing a sequence of swapping operation
-- line 2285~2455 : abstract definition of a valid scheduler (hypothesis on what relation should be satisfied between original and scheduled instructions), and proof of forward simulation under such hypothesis 
-- line 2462~2623: concrete definition of a list scheduler, while the scheduling heuristic is abstracted as an parameter
-- line 2627~3067: semantics preservation of the list scheduler
-- line 3074~3221: instantiating the scheduling heuristic using outside prioritizer (implemented in OCaml code)
-- line 3225~3230: semantics preservation of the actual scheduler we used to run experiments
+The mechanized proof in file *<u>backend/Scheduling.v</u>* consists of the following parts:
 
+- **Line 46~765**, *Section TRY_SWAP, TOPO_REORDER, LIST_TOPO, SWAPPING_PROPERTY, TRY_SWAP_NUM*: 
 
+  Properties on abstract topo-logical sort
 
-### Paper-to-artifact correspondence guide
+- **Line 768~826**, *Section SIMULATION_SEQUENCE*: 
 
-TODO
+  Additional properties on general CompCert framework
+
+- **Line 832~868**, *Section MACHINE_DEPENDENT_RISCV*:
+
+  Machine dependent proofs (Risc-V)
+
+- **Line 870~910**: *Section MACHINE_DEPENDENT_X86* (commented): 
+
+  Machine dependent proofs (x86_64), 
+
+- **Line 912~1523**:
+
+  Lemmas about the intermediate language *Linear* that we used to do instruction scheduling
+
+- **Line 1525~2221**, *Section SINGLE_SWAP_CORRECTNESS*: 
+
+  Lemmas about semantics preservation after only swapping one pair of adjacent independent instructions inside only one function block
+
+- **Line 2224~2282:** 
+
+  Lemmas about composing a sequence of swapping operation
+
+- **Line 2285~2455**, *Section ABSTRACT_SCHEDULER*: 
+
+  Abstract definition of a valid scheduler (hypothesis on what relation should be satisfied between original and scheduled instructions), and proof of forward simulation under such hypothesis 
+
+- **Line 2462~2623**, *Section ABSTRACT_LIST_SCHEDULER*: 
+
+  Concrete definition of a list scheduler, while the scheduling heuristic is still abstracted as an parameter
+
+- **Line 2627~3067**,  *Section ABSTRACT_LIST_SCHEDULER*: 
+
+  Correctness proof of the list scheduler
+
+- **Line 3074~3221**: 
+
+  Instantiating the scheduling heuristic using outside heuristic (implemented in OCaml code)
+
+- **Line 3225~3230**: 
+
+  Semantics preservation of the actual scheduler we used to run experiments
+
+*Note: the length of proof code is shorter than the proof length we claimed in paper due to some proof refinement after the submission*
 
 
 
 ### Axioms, assumptions, and unfinished parts of the proof
 
-Our artifact should contains 100% mechanized proof of all the theorems in our paper. There is no unfinished proofs. The proof is based on the original CompCert (version 3.12), and does not involves any new axioms/assumptions. It has exact the same trust base as the original CompCert's framework.
+Our artifact contains 100% mechanized proof of all the theorems in our paper. There is no unfinished proofs. The proof is based on the original CompCert (version 3.12), and does not involves any new axioms/assumptions. It has exact the same trust base as the original CompCert's framework.
 
 ***Notes:** linking is not currently supported, which is also not in the result of our paper. The theorems we implemented only guarantee the whole compiler correctness.* 
 
@@ -134,11 +186,289 @@ Our artifact should contains 100% mechanized proof of all the theorems in our pa
 
 
 
+### Instruction Scheduler Implemented
 
+#### a. Scheduler codes in Coq
+
+You may locate the functions corresponding ***Algorithm 2.*** in our paper at Section ABSTRACT_LIST_SCHEDULER by locating the following defininition:
+
+```
+Variable prioritizer: list instruction -> list positive.
+
+Definition DPTree_t := PTree.t (instruction * PS.t).
+...
+Fixpoint dep_pset (i: instruction) (l_rev: numblock): PS.t := 
+...
+Fixpoint dep_tree (l_rev: numblock): DPTree_t :=
+...
+Definition dep_tree_gen (nl: list (positive * instruction)) :=
+...
+Definition indep_nodes (m : DPTree_t) :=
+Definition schedule_1 ...
+Fixpoint schedule_n ...
+Definition schedule_numblock (nl: list (positive * instruction)) := ...
+Definition list_schedule' := schedule_program schedule_numblock.
+```
+
+The scheduling heuristic (prioritizer) was abstracted away. At line 3081, it was instantiated as Coq's interface with OCaml function
+
+```
+Parameter prioritizer : list int -> int -> list (list int) -> int -> (list int).
+
+Definition prioritizer' (l: list instruction): list positive :=
+  let nodes := block2ids l in
+  let edges := nblock2edges (numlistgen l) in
+  let prior' :=
+    prioritizer
+      nodes (int_of_nat (length nodes))
+      edges (int_of_nat (length edges)) in
+   List.map pos_of_int prior'   .
+```
+
+And the final instruction scheduling pass was defined as
+
+```
+Definition transf_program := list_schedule' prioritizer'.
+```
+
+
+
+#### b. Scheduler codes in OCaml and C
+
+The file <u>*./my/Prioritizer.ml*</u> contains the heuristic function in OCaml. It has exactly the same interface as the Coq parameter
+
+```ocaml
+let prioritizer nodes n edges m: int list = ...
+```
+
+This OCaml function further used a C function by using tools Ctypes
+
+```ocaml
+let result =
+    C.Functions.prioritizer (CArray.start nodes_arr) n (CArray.start edges_arr) m
+in
+...
+```
+
+The C function is defined in the file *<u>./my/oracle_sched.c</u>*
+
+```C
+int *prioritizer(int *nodes, int n, int **edges, int m) {
+	...
+}
+```
+
+
+
+### Locate the final theorem
+
+The final theorem of this paper was located at the end of the file *<u>./backend/Scheduling.v</u>*
+
+```
+Theorem list_schedule_forward_simulation:
+forall prog tprog, transf_program prog = OK tprog -> 
+  forward_simulation (Linear.semantics prog) (Linear.semantics tprog).
+Proof.
+  intros. eapply abstract_list_schedule_forward_simulation; eauto.
+Qed.
+```
+
+You may run 
+
+```
+Print Assumptions list_schedule_forward_simulation.
+```
+
+at Coq to check that we did not introduced different assumptions than the original CompCert.
+
+
+
+### Paper-to-artifact correspondence guide
+
+You may follow this guide to locate all the definition, lemmas and theorems claimed mathematically in our paper in our mechanized proof. Note that all proofs is collected under file *<u>./backend/Scheduling.v</u>*
+
+***Definition 9*** (Topo-sorted List): Under section TOPO_REORDER
+
+```
+Inductive topo_sorted: list A -> Prop := ...
+```
+
+***Definition 10*** (Generated Order by Position, GOP): 
+
+```
+Variable R: A -> A -> Prop.
+Variable l: list A.
+Inductive GenR' (i: positive) (na1 na2: positive * A): Prop :=
+  GenR_intro: List.In na1 (numlistgen' l i) -> List.In na2 (numlistgen' l i) -> 
+    fst na1 < fst na2 -> R (snd na1) (snd na2)  -> GenR' i na1 na2.
+Definition GenR := GenR' 1.
+```
+
+*Note: the function numlistgen pairs elements in a list with its index at the list*
+
+***Lemma 4.*** A list is topo-sorted by its own GOP, under section LIST_TOPO
+
+```
+Lemma tsorted_self: tsorted (numlistgen l).
+```
+
+***Definition 11*** (Swapping Attempt), under section TRY_SWAP
+
+```
+Fixpoint try_swap (n: nat) (l: list A): list A := ...
+Fixpoint try_swap_seq (ln: list nat) (la: list A): list A := ...
+```
+
+***Definition 12*** (Topological reorder)
+
+```
+Inductive topo_reorder : list A -> list A -> Prop :=
+| topo_reorder_nil: topo_reorder [] []
+| topo_reorder_skip x l l' : ngt x l -> topo_reorder l l' -> topo_reorder (x::l) (x::l')
+| topo_reorder_swap x y l : (~ R x y) -> (~ R y x) -> topo_reorder (y::x::l) (x::y::l)
+| topo_reorder_trans l l' l'' :
+  topo_reorder l l' -> topo_reorder l' l'' -> topo_reorder l l''.
+```
+
+*Note: as we mentioned in the paper, the mechanized proof used a different version of definition that already contains the concept of "swapping" for simpler proofs*
+
+***Lemma 5.*** (Swapping Lemma)
+
+The mechanized proof of the inductive proof in the paper consists of the following lemmas/theorems:
+
+Firstly, prove two topo-sorted lists with same elements is a topo_reorder of each other by induction on the length of a list:
+
+```
+Lemma sorted_same_elements_topo_reorder_ind:
+  forall n,
+    (forall k l1 l2, k < n -> length l1 = k -> NoDupSame l1 l2 ->  
+              topo_sorted l1 -> topo_sorted l2 -> topo_reorder l1 l2) ->
+    (forall l1 l2, length l1 = n -> NoDupSame l1 l2 ->  
+              topo_sorted l1 -> topo_sorted l2 -> topo_reorder l1 l2) .
+
+Theorem sorted_same_elements_topo_reorder: 
+    forall l1 l2,  NoDupSame l1 l2 -> 
+      topo_sorted l1 -> topo_sorted l2 -> topo_reorder l1 l2.
+```
+
+Since the definition of topo-reorder already contains the concepts of swapping, the proof of the above lemmas exactly matches the proof of **Lemma 5** in the paper.
+
+Then the following theorem matches the description of **Lemma 5** in the paper
+
+```
+Theorem swapping_property:
+  forall l nl', (treorder R l) (numlistgen l) nl' -> 
+    exists ln, nl' = try_swap_seq Rbnum ln (numlistgen l).
+```
+
+
+
+***Definition 14.*** (Dependence Relation)
+
+```
+Definition happens_before (i1 i2: instruction): bool := ...
+```
+
+
+
+***Definition 13.*** (Instruction Scheduler), ***Definition 15.*** (Valid Instruction Scheduler) 
+
+Under section ABSTRACT_SCHEDULER, they were written as an abstract parameter of a section.
+
+```
+Variable schedule': list (positive * instruction) -> res (list (positive * instruction)).
+
+Hypothesis schedule_valid:
+  forall l nl', schedule' (numlistgen l) = OK nl' -> 
+    treorder HBR l (numlistgen l) nl'.
+```
+
+ and ***Lemma 6.*** (decomposing lemma)
+
+```
+Lemma swapping_lemma_numblock:
+  forall l nl', schedule' (numlistgen l) = OK nl' ->
+      exists ln, nl' = try_swap_seq HBnum ln (numlistgen l).
+```
+
+***Definition 16.*** (Single Swapper) at line 1359 and 1378
+
+```
+Fixpoint try_swap_prog_def_in_one (pos: nat) (n: nat) (prog_defs: list (ident * globdef fundef unit)): list (ident * globdef fundef unit) := ...     
+Definition transf_program_try_swap_in_one (pos: nat) (n: nat) (p: program): res program:= 
+...
+```
+
+***Definition 17.*** (Composing Scheduler)  at line 1381
+
+```
+Fixpoint try_swap_prog_def_seq (seq: list (nat * nat)) (prog_defs: list (ident * globdef fundef unit)):= ...
+```
+
+***Lemma 7.*** (correctness of single swapper) at line 2227
+
+```
+Lemma transf_program_single_swap_forward_simulation:
+  forall pos n prog tprog, 
+    transf_program_try_swap_in_one pos n prog = OK tprog ->
+    	forward_simulation (Linear.semantics prog) (Linear.semantics tprog).
+```
+
+***Lemma 8.*** (Any valid instruction scheduler preserved forward simulation relarion). at section ABSTRACT_SCHEDULER
+
+```
+Theorem schedule_program_forward_simulation:
+ forall prog tprog: program, schedule_program prog = OK tprog ->
+  forward_simulation (Linear.semantics prog) (Linear.semantics tprog).
+```
+
+***Lemma 9.*** Graph construction correctness
+
+```
+Lemma dep_tree_sound: ...
+Lemma dep_tree_complete: ...
+```
+
+***Definition 18.*** (Scheduling invariant)
+
+```
+Inductive schedule_invariant (l: list instruction) (original: DPTree_t)
+    (scheduled: list (positive * instruction)) (remain: DPTree_t) : Prop :=
+...
+```
+
+***Lemma 10.*** (Invariant Preservation)
+
+```
+Lemma initial_invariant_preserve: ...
+Lemma schedule_1_invariant_preserve: ...
+Lemma schedule_n_invariant_preserve: ...
+Lemma final_invariant_preserve: ...
+```
+
+***Lemma 12.*** (Our implementation is a valid scheduler)
+
+```
+Lemma schedule_numblock_correct:
+  forall l nl', schedule_numblock (numlistgen l) = OK nl' ->
+    treorder HBR l (numlistgen l) nl'.
+```
+
+***Theorem 1.*** Scheduler in Algorithm 2 preserved the forward simulation relation
+
+```
+Theorem abstract_list_schedule_forward_simulation:
+  forall prog tprog, list_schedule' prog = OK tprog -> 
+    forward_simulation (Linear.semantics prog) (Linear.semantics tprog).
+Proof.
+  intros. eapply schedule_program_forward_simulation; eauto.
+  eapply schedule_numblock_correct.
+Qed.
+```
 
 
 
 # Run our experiments
 
-
+TODO
 

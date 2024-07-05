@@ -493,8 +493,8 @@ Section LIST_TOPO.
     | x :: l' => (n, x) :: numlistgen' l' (n + 1)
     end.
   
-  Check numlistgen'.
-
+  
+  
   Definition numlistgen (l: list A) := numlistgen' l 1.
 
   Fixpoint numlistoff (l: list (positive * A)): list A :=
@@ -2221,6 +2221,8 @@ Section SINGLE_SWAP_CORRECTNESS.
 End SINGLE_SWAP_CORRECTNESS.
 
 
+(* swapping one pair again and again ... *)
+
 Lemma transf_program_single_swap_forward_simulation:
   forall pos n prog tprog, 
     transf_program_try_swap_in_one pos n prog = OK tprog ->
@@ -2616,7 +2618,7 @@ Section ABSTRACT_LIST_SCHEDULER.
     do (nl', m) <- schedule_n prior (List.length nl) m [] m;
     OK nl'.
 
-  (* The actual compiler pass as the case study *)
+  (* The actual compiler pass of the case study *)
     (* Can test compiler using this function without finishing proof *)
   Definition list_schedule' := schedule_program schedule_numblock.
 
@@ -3226,3 +3228,6 @@ forall prog tprog, transf_program prog = OK tprog ->
 Proof.
   intros. eapply abstract_list_schedule_forward_simulation; eauto.
 Qed.
+
+
+(* Print Assumptions list_schedule_forward_simulation. *)
