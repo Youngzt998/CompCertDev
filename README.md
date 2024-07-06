@@ -4,6 +4,10 @@
 
 This is an instruction on how to evaluate the artifact of our project in our paper *Fully Verified Instruction Scheduling: a lightweight and flexible approach*.
 
+The artifacts consists of two parts: mechanized proofs and performance experiments. Evaluating the mechanized proofs only requires software dependencies on Linux machine and the use of proof assistant Coq.  Evaluating the experiments requires an in-order Risc-V hardware.
+
+This documentations contains step-by-step building guides and a detailed paper-to-artifact correspondence guide that matches every lemma/theorems in our submitted paper with the mechanized proofs.
+
 
 
 # Environment Configuration
@@ -44,7 +48,7 @@ This is an instruction on how to evaluate the artifact of our project in our pap
 opam install coq=8.15.0 menhir=20220210 
 ```
 
-​		Theses ensure the you can check our formal proofs 
+​		Theses ensure that you can check our formal proofs 
 
 3. Install all the dependencies of generating executable file of the compiler
 
@@ -58,7 +62,12 @@ opam install ocaml=4.14.0 ctypes=0.20.1 ctypes-foreign=0.18.0 dune=3.13.0
 
 **Step 2: build both the proofs and executable files**
 
-1. Clone [our project](https://github.com/Youngzt998/CompCertDev) file at your local machine
+1. Clone [our project](https://github.com/Youngzt998/CompCertDev) file at your local machine, and switch to branch dune-ffi
+
+   ```
+   git clone git@github.com:Youngzt998/CompCertDev.git
+   git checkout dune-ffi
+   ```
 
 2. At the root path,  run the configure script
 
@@ -76,22 +85,45 @@ opam install ocaml=4.14.0 ctypes=0.20.1 ctypes-foreign=0.18.0 dune=3.13.0
    make all
    ```
 
-   or parallel build it by
+   or parallel build on an N-core machine it by
 
    ```
    make -j N all
    ```
 
-   This takes almost the same building process as the original CompCert, i,e, it checks all the Coq proofs, then extracts Caml code from the Coq specification and combines it with supporting hand-written Caml code to generate the executable for CompCert.
+   This takes almost the same building process as the original CompCert, i,e, it checks all the Coq proofs, then extracts OCaml code from the Coq specification and combines it with supporting hand-written Caml code to generate the executable for CompCert. The *.ml files will be linked successfully and generating the executable files.
 
-   If you see some error message mentioning version problem after successfully generating *.ml files after building the Coq files, run the following command
+   An expected error message could occur at the end of making, <u>if you are not building the system on Risc-V machine</u>:
+
+   ```
+   gcc: error: unrecognized argument in option ‘-mabi=lp64d’
+   make[2]: *** [i64_stof.o] Error 2
+   gcc: note: valid arguments to ‘-mabi=’ are: ms sysv
+   ccomp: error: preprocessor command failed with exit code 1 (use -v to see invocation)
+   
+   1 error detected.
+   Makefile:65: recipe for target 'i64_udivmod.o' failed
+   make[2]: *** [i64_udivmod.o] Error 2
+   make[2]: Leaving directory '/home/zyang638/coq-compcert-variants/test/CompCertDev/runtime'
+   Makefile:226: recipe for target 'runtime' failed
+   make[1]: *** [runtime] Error 2
+   make[1]: Leaving directory '/home/zyang638/coq-compcert-variants/test/CompCertDev'
+   Makefile:181: recipe for target 'all' failed
+   make: *** [all] Error 2
+   ```
+
+   This means you have generated an executable compiler program targeting Risc-V, but it fails initial tests on a none-Risc-V machine. It will not influence the evaluation on mechanized proofs. However, the experiments part will not be able to run.
+
+   
+
+   If you ever run *make clean* after the first building, make sure to run the following command before re-building the projects to avoid a version issue.
 
    ```
    make -f Makefile.extr clean
    make
    ```
 
-   And the *.ml files will be linked successfully and generating the executable files
+   
 
 4. Check the generated compiler executable file ***ccomp*** at the root path of the project file. This is the compiler we used to run the performance evaluation.
 
@@ -466,28 +498,22 @@ Qed.
 # Run our experiments
 
 In the performance experiments in Section 8.2, we used two versions of the CompCert compiler.
-
 * Baseline: Original CompCert version 3.13.1
   * https://github.com/AbsInt/CompCert/tree/3.13
 * Our work: This repository
 
 ## Preparation
-
 Set the following two environmental variables to specify the baseline and our repository. Assuming they are located in directory `$OOPSLA24_AE_HOME` and respectively named as `CompCert` and `CompCertDev`, we can set them as follows:
-
 ```shell
    export COMPCERT_HOME_BASE=$OOPSLA24_AE_HOME/CompCert
    export COMPCERT_HOME_SCHE=$OOPSLA24_AE_HOME/CompCertDev 
 ```
 
 Move to the following directory under `$COMPCERT_HOME_SCHE` (i.e., this repository) which contains all benchmark codes and compilation script.
-
 ```shell
    cd $COMPCERT_HOME_SCHE/test/c/PolyBenchC-4.2.1/oopsla24_expr/
 ```
-
 ## Compilation
-
 To compile the benchmark programs, use `compile.sh` shell script that generates two versions of binaries compiled by the baseline and our version of CompCert.
 The following command compiles all the benchmarks and shows the compilation times in seconds.
 
@@ -496,7 +522,6 @@ The following command compiles all the benchmarks and shows the compilation time
 ```
 
 An example output is shown below, where `2mm.pluto.kernel.c` benchmark is compiled.
-
 ```shell
    ./compile.sh 2mm.pluto.kernel.c 
    Kernel compilation time measurements: 2mm.pluto.kernel.c for base (repeat 3 times)
@@ -518,13 +543,10 @@ An example output is shown below, where `2mm.pluto.kernel.c` benchmark is compil
 ```
 
 ## Run
-
 After the above step, there are two binaries generated for each input benchmark, e.g., `2mm.pluto.base` and `2mm.pluto.sche` for `2mm.pluto.kernel.c` benchmark, respectively corresponding to the baseline version CompCert 3.13.1 and our version with instruction scheduling for a RISC-V in-order processor.
-
 ```shell
    ./2mm.pluto.base >& 2mm_base_output.txt
    ./2mm.pluto.sche >& 2mm_sche_output.txt
 ```
-
 The executed output shows the kernel execution time in seconds and computation results.
 
